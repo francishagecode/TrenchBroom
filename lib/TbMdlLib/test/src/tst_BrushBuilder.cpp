@@ -638,6 +638,207 @@ TEST_CASE("BrushBuilder")
     }
   }
 
+  SECTION("createCorridorBend")
+  {
+    auto builder = BrushBuilder{MapFormat::Standard, worldBounds};
+    const auto bounds = vm::bbox3d{{-128, -96, 0}, {128, 96, 128}};
+    const auto shape = CorridorShape{
+      .wallThickness = 16.0,
+      .cornerRadius = 48.0,
+      .cornerSegments = 2u,
+      .ceilingRecessWidth = 0.0,
+      .ceilingRecessDepth = 0.0,
+      .sideRecessHeight = 0.0,
+      .sideRecessDepth = 0.0,
+    };
+
+    SECTION("45 degree left and right bends")
+    {
+      const auto bendAngle = vm::Cd::quarter_pi();
+      const auto bendRadius =
+        bounds.size().x() / std::sin(bendAngle) - bounds.size().y() / 2.0;
+      const auto lateralExtent = bendRadius * (1.0 - std::cos(bendAngle))
+                                 + bounds.size().y() / 2.0 * std::cos(bendAngle);
+
+      builder.createCorridorBend(
+        bounds,
+        shape,
+        vm::axis::x,
+        CorridorBendAngle::Deg45,
+        CorridorBendDirection::Left,
+        3u,
+        "someName")
+        | kdl::transform([&](const auto& brushes) {
+            REQUIRE(brushes.size() == 36u);
+            CHECK(
+              vm::approx{
+                vm::bbox3d{{-128, -96, 0}, {128, lateralExtent, 128}}, vertexEpsilon}
+              == getMergedBounds(brushes));
+            CHECK(std::ranges::all_of(brushes, [](const auto& brush) {
+              return brush.fullySpecified();
+            }));
+          })
+        | kdl::transform_error([](const auto& e) { FAIL(e); });
+
+      builder.createCorridorBend(
+        bounds,
+        shape,
+        vm::axis::x,
+        CorridorBendAngle::Deg45,
+        CorridorBendDirection::Right,
+        3u,
+        "someName")
+        | kdl::transform([&](const auto& brushes) {
+            REQUIRE(brushes.size() == 36u);
+            CHECK(
+              vm::approx{
+                vm::bbox3d{{-128, -lateralExtent, 0}, {128, 96, 128}}, vertexEpsilon}
+              == getMergedBounds(brushes));
+          })
+        | kdl::transform_error([](const auto& e) { FAIL(e); });
+    }
+
+    SECTION("90 degree bend")
+    {
+      builder.createCorridorBend(
+        bounds,
+        shape,
+        vm::axis::x,
+        CorridorBendAngle::Deg90,
+        CorridorBendDirection::Left,
+        3u,
+        "someName")
+        | kdl::transform([&](const auto& brushes) {
+            REQUIRE(brushes.size() == 72u);
+            CHECK(
+              vm::approx{vm::bbox3d{{-128, -96, 0}, {128, 160, 128}}, vertexEpsilon}
+              == getMergedBounds(brushes));
+          })
+        | kdl::transform_error([](const auto& e) { FAIL(e); });
+    }
+
+    SECTION("Y axis left turn follows world-space left")
+    {
+      const auto yBounds = vm::bbox3d{{-96, -128, 0}, {96, 128, 128}};
+      const auto bendAngle = vm::Cd::quarter_pi();
+      const auto bendRadius =
+        yBounds.size().y() / std::sin(bendAngle) - yBounds.size().x() / 2.0;
+      const auto lateralExtent = bendRadius * (1.0 - std::cos(bendAngle))
+                                 + yBounds.size().x() / 2.0 * std::cos(bendAngle);
+
+      builder.createCorridorBend(
+        yBounds,
+        shape,
+        vm::axis::y,
+        CorridorBendAngle::Deg45,
+        CorridorBendDirection::Left,
+        3u,
+        "someName")
+        | kdl::transform([&](const auto& brushes) {
+            CHECK(
+              vm::approx{
+                vm::bbox3d{{-lateralExtent, -128, 0}, {96, 128, 128}}, vertexEpsilon}
+              == getMergedBounds(brushes));
+          })
+        | kdl::transform_error([](const auto& e) { FAIL(e); });
+    }
+
+    SECTION("Invalid or undersized bend settings")
+    {
+      CHECK(builder
+              .createCorridorBend(
+                bounds,
+                shape,
+                vm::axis::z,
+                CorridorBendAngle::Deg45,
+                CorridorBendDirection::Left,
+                3u,
+                "someName")
+              .is_error());
+      CHECK(builder
+              .createCorridorBend(
+                bounds,
+                shape,
+                vm::axis::x,
+                CorridorBendAngle::Deg45,
+                CorridorBendDirection::Left,
+                0u,
+                "someName")
+              .is_error());
+      CHECK(
+        builder.createCorridorBend(
+          vm::bbox3d{{-64, -96, 0}, {64, 96, 128}},
+          shape,
+          vm::axis::x,
+          CorridorBendAngle::Deg90,
+          CorridorBendDirection::Left,
+          3u,
+          "someName")
+        == Result<std::vector<Brush>>{std::vector<Brush>{}});
+    }
+  }
+
+  SECTION("createCorridorTJunction")
+  {
+    auto builder = BrushBuilder{MapFormat::Standard, worldBounds};
+    const auto bounds = vm::bbox3d{{-256, -384, 0}, {256, 384, 160}};
+    const auto shape = CorridorShape{
+      .wallThickness = 16.0,
+      .cornerRadius = 32.0,
+      .cornerSegments = 2u,
+      .ceilingRecessWidth = 64.0,
+      .ceilingRecessDepth = 8.0,
+      .sideRecessHeight = 48.0,
+      .sideRecessDepth = 8.0,
+    };
+
+    SECTION("Three open ends and branch opening")
+    {
+      builder.createCorridorTJunction(bounds, shape, vm::axis::x, 256.0, "someName")
+        | kdl::transform([&](const auto& brushes) {
+            REQUIRE(brushes.size() == 87u);
+            CHECK(getMergedBounds(brushes) == bounds);
+            CHECK(std::ranges::any_of(brushes, [](const auto& brush) {
+              return brush.hasVertex({-256, 32, 152});
+            }));
+            CHECK(std::ranges::any_of(brushes, [](const auto& brush) {
+              return brush.hasVertex({160, -384, 152});
+            }));
+            CHECK(std::ranges::any_of(brushes, [](const auto& brush) {
+              return brush.hasVertex({160, 384, 152});
+            }));
+          })
+        | kdl::transform_error([](const auto& e) { FAIL(e); });
+    }
+
+    SECTION("Y axis")
+    {
+      const auto yBounds = vm::bbox3d{{-384, -256, 0}, {384, 256, 160}};
+      builder.createCorridorTJunction(yBounds, shape, vm::axis::y, 256.0, "someName")
+        | kdl::transform([&](const auto& brushes) {
+            REQUIRE(brushes.size() == 87u);
+            CHECK(getMergedBounds(brushes) == yBounds);
+          })
+        | kdl::transform_error([](const auto& e) { FAIL(e); });
+    }
+
+    SECTION("Invalid or undersized junction settings")
+    {
+      CHECK(builder.createCorridorTJunction(bounds, shape, vm::axis::z, 256.0, "someName")
+              .is_error());
+      CHECK(builder.createCorridorTJunction(bounds, shape, vm::axis::x, 0.0, "someName")
+              .is_error());
+      CHECK(
+        builder.createCorridorTJunction(
+          vm::bbox3d{{-128, -128, 0}, {128, 128, 160}},
+          shape,
+          vm::axis::x,
+          256.0,
+          "someName")
+        == Result<std::vector<Brush>>{std::vector<Brush>{}});
+    }
+  }
+
   SECTION("createCuboid")
   {
     auto builder = BrushBuilder{MapFormat::Standard, worldBounds};

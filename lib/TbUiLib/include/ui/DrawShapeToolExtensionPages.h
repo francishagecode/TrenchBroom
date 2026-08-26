@@ -138,7 +138,20 @@ private:
   Q_OBJECT
 };
 
-class DrawShapeToolCorridorShapeExtensionPage : public DrawShapeToolExtensionPage
+class DrawShapeToolCorridorProfileExtensionPage : public DrawShapeToolExtensionPage
+{
+public:
+  explicit DrawShapeToolCorridorProfileExtensionPage(
+    DrawShapeToolParameters& parameters, bool horizontalOnly, QWidget* parent = nullptr);
+
+protected:
+  DrawShapeToolParameters& m_parameters;
+
+  Q_OBJECT
+};
+
+class DrawShapeToolCorridorShapeExtensionPage
+  : public DrawShapeToolCorridorProfileExtensionPage
 {
 public:
   explicit DrawShapeToolCorridorShapeExtensionPage(
@@ -147,8 +160,32 @@ public:
     QWidget* parent = nullptr);
 
 private:
-  DrawShapeToolParameters& m_parameters;
+  Q_OBJECT
+};
 
+class DrawShapeToolCorridorBendExtensionPage
+  : public DrawShapeToolCorridorProfileExtensionPage
+{
+public:
+  explicit DrawShapeToolCorridorBendExtensionPage(
+    MapDocument& document,
+    DrawShapeToolParameters& parameters,
+    QWidget* parent = nullptr);
+
+private:
+  Q_OBJECT
+};
+
+class DrawShapeToolCorridorTJunctionExtensionPage
+  : public DrawShapeToolCorridorProfileExtensionPage
+{
+public:
+  explicit DrawShapeToolCorridorTJunctionExtensionPage(
+    MapDocument& document,
+    DrawShapeToolParameters& parameters,
+    QWidget* parent = nullptr);
+
+private:
   Q_OBJECT
 };
 

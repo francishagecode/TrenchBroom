@@ -445,7 +445,7 @@ TEST_CASE("NodeWriter")
     CHECK(actual == expected);
   }
 
-  SECTION("writeValveCorridor")
+  SECTION("writeValveCorridorShapes")
   {
     const auto worldBounds = vm::bbox3d{8192.0};
     auto worldNode = WorldNode{{}, {}, MapFormat::Valve};
@@ -460,23 +460,55 @@ TEST_CASE("NodeWriter")
       .sideRecessDepth = 8.0,
     };
 
-    auto brushes = builder.createCorridor(
-                     {{-128, -128, 0}, {128, 128, 160}},
-                     shape,
-                     vm::axis::x,
-                     "AquilariusRetroTextures/t13")
-                   | kdl::value();
-    for (auto& brush : brushes)
-    {
-      worldNode.defaultLayer()->addChild(new BrushNode{std::move(brush)});
-    }
+    const auto addBrushes = [&](auto brushes) {
+      for (auto& brush : brushes)
+      {
+        worldNode.defaultLayer()->addChild(new BrushNode{std::move(brush)});
+      }
+    };
+
+    addBrushes(
+      builder.createCorridor(
+        {{-900, -128, 0}, {-500, 128, 160}},
+        shape,
+        vm::axis::x,
+        "AquilariusRetroTextures/t13")
+      | kdl::value());
+    addBrushes(
+      builder.createCorridorBend(
+        {{-400, -128, 0}, {-16, 128, 160}},
+        shape,
+        vm::axis::x,
+        CorridorBendAngle::Deg45,
+        CorridorBendDirection::Left,
+        3u,
+        "AquilariusRetroTextures/t13")
+      | kdl::value());
+    addBrushes(
+      builder.createCorridorBend(
+        {{-100, -500, 0}, {284, -244, 160}},
+        shape,
+        vm::axis::x,
+        CorridorBendAngle::Deg90,
+        CorridorBendDirection::Left,
+        3u,
+        "AquilariusRetroTextures/t13")
+      | kdl::value());
+    addBrushes(
+      builder.createCorridorTJunction(
+        {{350, -300, 0}, {950, 300, 160}},
+        shape,
+        vm::axis::x,
+        256.0,
+        "AquilariusRetroTextures/t13")
+      | kdl::value());
 
     auto str = std::stringstream{};
     auto writer = NodeWriter{worldNode, str};
     writer.writeMap(taskManager);
 
     const auto actual = str.str();
-    CHECK(actual.find("// brush 23") != std::string::npos);
+    CHECK(actual.find("// brush 326") != std::string::npos);
     CHECK(actual.find("AquilariusRetroTextures/t13 [ ") != std::string::npos);
   }
 

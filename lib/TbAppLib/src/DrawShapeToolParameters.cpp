@@ -19,6 +19,8 @@
 
 #include "ui/DrawShapeToolParameters.h"
 
+#include <algorithm>
+
 namespace tb::ui
 {
 
@@ -155,9 +157,70 @@ const mdl::CorridorShape& DrawShapeToolParameters::corridorShape() const
 
 void DrawShapeToolParameters::setCorridorShape(mdl::CorridorShape corridorShape)
 {
-  if (corridorShape != m_corridorShape)
+  const auto junctionWidth =
+    std::max(m_corridorJunctionWidth, 2.0 * corridorShape.wallThickness + 1.0);
+  if (corridorShape != m_corridorShape || junctionWidth != m_corridorJunctionWidth)
   {
     m_corridorShape = std::move(corridorShape);
+    m_corridorJunctionWidth = junctionWidth;
+    parametersDidChangeNotifier();
+  }
+}
+
+mdl::CorridorBendAngle DrawShapeToolParameters::corridorBendAngle() const
+{
+  return m_corridorBendAngle;
+}
+
+void DrawShapeToolParameters::setCorridorBendAngle(const mdl::CorridorBendAngle angle)
+{
+  if (angle != m_corridorBendAngle)
+  {
+    m_corridorBendAngle = angle;
+    parametersDidChangeNotifier();
+  }
+}
+
+mdl::CorridorBendDirection DrawShapeToolParameters::corridorBendDirection() const
+{
+  return m_corridorBendDirection;
+}
+
+void DrawShapeToolParameters::setCorridorBendDirection(
+  const mdl::CorridorBendDirection direction)
+{
+  if (direction != m_corridorBendDirection)
+  {
+    m_corridorBendDirection = direction;
+    parametersDidChangeNotifier();
+  }
+}
+
+size_t DrawShapeToolParameters::corridorBendSegments() const
+{
+  return m_corridorBendSegments;
+}
+
+void DrawShapeToolParameters::setCorridorBendSegments(const size_t segments)
+{
+  if (segments != m_corridorBendSegments)
+  {
+    m_corridorBendSegments = segments;
+    parametersDidChangeNotifier();
+  }
+}
+
+double DrawShapeToolParameters::corridorJunctionWidth() const
+{
+  return m_corridorJunctionWidth;
+}
+
+void DrawShapeToolParameters::setCorridorJunctionWidth(const double width)
+{
+  const auto clampedWidth = std::max(width, 2.0 * m_corridorShape.wallThickness + 1.0);
+  if (clampedWidth != m_corridorJunctionWidth)
+  {
+    m_corridorJunctionWidth = clampedWidth;
     parametersDidChangeNotifier();
   }
 }

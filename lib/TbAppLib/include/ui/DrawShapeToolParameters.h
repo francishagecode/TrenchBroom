@@ -68,6 +68,10 @@ private:
     .sideRecessHeight = 48.0,
     .sideRecessDepth = 8.0,
   };
+  mdl::CorridorBendAngle m_corridorBendAngle = mdl::CorridorBendAngle::Deg45;
+  mdl::CorridorBendDirection m_corridorBendDirection = mdl::CorridorBendDirection::Left;
+  size_t m_corridorBendSegments = 3u;
+  double m_corridorJunctionWidth = 256.0;
 
 public:
   Notifier<> parametersDidChangeNotifier;
@@ -101,6 +105,18 @@ public:
 
   const mdl::CorridorShape& corridorShape() const;
   void setCorridorShape(mdl::CorridorShape corridorShape);
+
+  mdl::CorridorBendAngle corridorBendAngle() const;
+  void setCorridorBendAngle(mdl::CorridorBendAngle angle);
+
+  mdl::CorridorBendDirection corridorBendDirection() const;
+  void setCorridorBendDirection(mdl::CorridorBendDirection direction);
+
+  size_t corridorBendSegments() const;
+  void setCorridorBendSegments(size_t segments);
+
+  double corridorJunctionWidth() const;
+  void setCorridorJunctionWidth(double width);
 };
 
 } // namespace tb::ui

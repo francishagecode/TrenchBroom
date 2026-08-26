@@ -504,6 +504,55 @@ TEST_CASE("DrawShapeToolCorridorExtension")
   CHECK(extension.iconPath() == "ShapeTool_Corridor.svg");
 }
 
+TEST_CASE("DrawShapeToolCorridorBendExtension")
+{
+  auto fixture = MapDocumentFixture{};
+  auto& document = fixture.create();
+  auto extension = DrawShapeToolCorridorBendExtension{document};
+  auto parameters = DrawShapeToolParameters{};
+  const auto bounds = vm::bbox3d{{-256, -128, 0}, {256, 128, 160}};
+
+  SECTION("45 degree bend")
+  {
+    extension.createBrushes(bounds, parameters)
+      | kdl::transform([&](const auto& brushes) { CHECK(brushes.size() == 72u); })
+      | kdl::transform_error([](const auto& e) { FAIL(e); });
+  }
+
+  SECTION("90 degree bend")
+  {
+    parameters.setCorridorBendAngle(mdl::CorridorBendAngle::Deg90);
+    parameters.setCorridorBendDirection(mdl::CorridorBendDirection::Right);
+    extension.createBrushes(bounds, parameters)
+      | kdl::transform([&](const auto& brushes) { CHECK(brushes.size() == 144u); })
+      | kdl::transform_error([](const auto& e) { FAIL(e); });
+  }
+
+  CHECK(extension.name() == "Corridor Bend");
+  CHECK(extension.iconPath() == "ShapeTool_CorridorBend.svg");
+}
+
+TEST_CASE("DrawShapeToolCorridorTJunctionExtension")
+{
+  auto fixture = MapDocumentFixture{};
+  auto& document = fixture.create();
+  auto extension = DrawShapeToolCorridorTJunctionExtension{document};
+  auto parameters = DrawShapeToolParameters{};
+  const auto bounds = vm::bbox3d{{-256, -384, 0}, {256, 384, 160}};
+
+  extension.createBrushes(bounds, parameters) | kdl::transform([&](const auto& brushes) {
+    CHECK(brushes.size() == 87u);
+    CHECK(
+      kdl::fold_left_first(
+        brushes | std::views::transform([](const auto& brush) { return brush.bounds(); }),
+        [](const auto& lhs, const auto& rhs) { return vm::merge(lhs, rhs); })
+      == bounds);
+  }) | kdl::transform_error([](const auto& e) { FAIL(e); });
+
+  CHECK(extension.name() == "Corridor T");
+  CHECK(extension.iconPath() == "ShapeTool_CorridorT.svg");
+}
+
 TEST_CASE("DrawShapeToolParameters")
 {
   auto parameters = DrawShapeToolParameters{};
@@ -529,6 +578,10 @@ TEST_CASE("DrawShapeToolParameters")
         .sideRecessHeight = 48.0,
         .sideRecessDepth = 8.0,
       });
+    REQUIRE(parameters.corridorBendAngle() == mdl::CorridorBendAngle::Deg45);
+    REQUIRE(parameters.corridorBendDirection() == mdl::CorridorBendDirection::Left);
+    REQUIRE(parameters.corridorBendSegments() == 3u);
+    REQUIRE(parameters.corridorJunctionWidth() == 256.0);
   }
 
   SECTION("Axis modifications")
@@ -686,6 +739,43 @@ TEST_CASE("DrawShapeToolParameters")
 
     parameters.setCorridorShape(changedShape);
     CHECK(parametersDidChange.notifications.size() == 1u);
+  }
+
+  SECTION("Corridor connector modifications")
+  {
+    auto parametersDidChange = Observer<>{parameters.parametersDidChangeNotifier};
+
+    parameters.setCorridorBendAngle(mdl::CorridorBendAngle::Deg45);
+    parameters.setCorridorBendDirection(mdl::CorridorBendDirection::Left);
+    parameters.setCorridorBendSegments(3u);
+    parameters.setCorridorJunctionWidth(256.0);
+    CHECK(parametersDidChange.notifications.empty());
+
+    parameters.setCorridorBendAngle(mdl::CorridorBendAngle::Deg90);
+    REQUIRE(parameters.corridorBendAngle() == mdl::CorridorBendAngle::Deg90);
+    CHECK(parametersDidChange.notifications.size() == 1u);
+
+    parameters.setCorridorBendDirection(mdl::CorridorBendDirection::Right);
+    REQUIRE(parameters.corridorBendDirection() == mdl::CorridorBendDirection::Right);
+    CHECK(parametersDidChange.notifications.size() == 2u);
+
+    parameters.setCorridorBendSegments(5u);
+    REQUIRE(parameters.corridorBendSegments() == 5u);
+    CHECK(parametersDidChange.notifications.size() == 3u);
+
+    parameters.setCorridorJunctionWidth(320.0);
+    REQUIRE(parameters.corridorJunctionWidth() == 320.0);
+    CHECK(parametersDidChange.notifications.size() == 4u);
+
+    parameters.setCorridorJunctionWidth(1.0);
+    REQUIRE(parameters.corridorJunctionWidth() == 33.0);
+    CHECK(parametersDidChange.notifications.size() == 5u);
+
+    auto thickShape = parameters.corridorShape();
+    thickShape.wallThickness = 32.0;
+    parameters.setCorridorShape(thickShape);
+    REQUIRE(parameters.corridorJunctionWidth() == 65.0);
+    CHECK(parametersDidChange.notifications.size() == 6u);
   }
 
   SECTION("CircleShape modifications")

@@ -50,6 +50,18 @@ struct CorridorShape
   bool operator==(const CorridorShape&) const = default;
 };
 
+enum class CorridorBendAngle
+{
+  Deg45,
+  Deg90,
+};
+
+enum class CorridorBendDirection
+{
+  Left,
+  Right,
+};
+
 class BrushBuilder
 {
 private:
@@ -142,6 +154,32 @@ public:
     const vm::bbox3d& bounds,
     const CorridorShape& corridorShape,
     vm::axis::type axis,
+    const std::string& textureName) const;
+
+  /**
+   * Sweeps a corridor profile through a horizontal 45 or 90 degree arc. The profile
+   * starts on the minimum plane of `axis`; the bounds' axis length determines the bend
+   * radius. `segmentsPer45Degrees` controls the angular subdivision.
+   */
+  Result<std::vector<Brush>> createCorridorBend(
+    const vm::bbox3d& bounds,
+    const CorridorShape& corridorShape,
+    vm::axis::type axis,
+    CorridorBendAngle angle,
+    CorridorBendDirection direction,
+    size_t segmentsPer45Degrees,
+    const std::string& textureName) const;
+
+  /**
+   * Creates a horizontal T connector with three open ends. The stem begins on the
+   * minimum plane of `axis`, and the crossbar spans the other horizontal axis at the
+   * maximum end of the stem. `corridorWidth` is shared by all three openings.
+   */
+  Result<std::vector<Brush>> createCorridorTJunction(
+    const vm::bbox3d& bounds,
+    const CorridorShape& corridorShape,
+    vm::axis::type axis,
+    double corridorWidth,
     const std::string& textureName) const;
 
   Result<Brush> createCone(

@@ -93,6 +93,10 @@ DrawShapeToolExtensionPage* createExtensionPage(
     return new DrawShapeToolArchShapeExtensionPage{document, parameters, parent};
   case DrawShapeToolExtensionKind::Corridor:
     return new DrawShapeToolCorridorShapeExtensionPage{document, parameters, parent};
+  case DrawShapeToolExtensionKind::CorridorBend:
+    return new DrawShapeToolCorridorBendExtensionPage{document, parameters, parent};
+  case DrawShapeToolExtensionKind::CorridorTJunction:
+    return new DrawShapeToolCorridorTJunctionExtensionPage{document, parameters, parent};
   case DrawShapeToolExtensionKind::Cylinder:
     return new DrawShapeToolCylinderShapeExtensionPage{document, parameters, parent};
   case DrawShapeToolExtensionKind::Cone:
@@ -404,13 +408,20 @@ DrawShapeToolArchShapeExtensionPage::DrawShapeToolArchShapeExtensionPage(
     [=, this]() { thicknessBox->setValue(m_parameters.thickness()); });
 }
 
-DrawShapeToolCorridorShapeExtensionPage::DrawShapeToolCorridorShapeExtensionPage(
-  MapDocument& document, DrawShapeToolParameters& parameters, QWidget* parent)
+DrawShapeToolCorridorProfileExtensionPage::DrawShapeToolCorridorProfileExtensionPage(
+  DrawShapeToolParameters& parameters, const bool horizontalOnly, QWidget* parent)
   : DrawShapeToolExtensionPage{parent}
   , m_parameters{parameters}
 {
+  if (horizontalOnly && m_parameters.corridorAxis() == vm::axis::z)
+  {
+    m_parameters.setCorridorAxis(vm::axis::x);
+  }
+
   auto* axisBox = new QComboBox{};
-  axisBox->addItems({tr("X"), tr("Y"), tr("Z")});
+  axisBox->addItems(
+    horizontalOnly ? QStringList{tr("X"), tr("Y")}
+                   : QStringList{tr("X"), tr("Y"), tr("Z")});
 
   const auto makeDimensionBox = []() {
     auto* box = new QDoubleSpinBox{};
@@ -526,7 +537,6 @@ DrawShapeToolCorridorShapeExtensionPage::DrawShapeToolCorridorShapeExtensionPage
     });
 
   addWidget(controlsWidget);
-  addApplyButton(document);
 
   m_notifierConnection += m_parameters.parametersDidChangeNotifier.connect([=, this]() {
     const auto& shape = m_parameters.corridorShape();
@@ -542,6 +552,96 @@ DrawShapeToolCorridorShapeExtensionPage::DrawShapeToolCorridorShapeExtensionPage
     sideRecessHeightBox->setValue(shape.sideRecessHeight);
     sideRecessDepthBox->setMaximum(maxRecessDepth);
     sideRecessDepthBox->setValue(shape.sideRecessDepth);
+  });
+}
+
+DrawShapeToolCorridorShapeExtensionPage::DrawShapeToolCorridorShapeExtensionPage(
+  MapDocument& document, DrawShapeToolParameters& parameters, QWidget* parent)
+  : DrawShapeToolCorridorProfileExtensionPage{parameters, false, parent}
+{
+  addApplyButton(document);
+}
+
+DrawShapeToolCorridorBendExtensionPage::DrawShapeToolCorridorBendExtensionPage(
+  MapDocument& document, DrawShapeToolParameters& parameters, QWidget* parent)
+  : DrawShapeToolCorridorProfileExtensionPage{parameters, true, parent}
+{
+  auto* angleLabel = new QLabel{tr("Bend:")};
+  auto* angleBox = new QComboBox{};
+  angleBox->addItems({tr("45°"), tr("90°")});
+
+  auto* directionLabel = new QLabel{tr("Turn:")};
+  auto* directionBox = new QComboBox{};
+  directionBox->addItems({tr("Left"), tr("Right")});
+
+  auto* segmentsLabel = new QLabel{tr("Steps / 45°:")};
+  auto* segmentsBox = new QSpinBox{};
+  segmentsBox->setRange(1, 16);
+
+  connect(
+    angleBox,
+    QOverload<int>::of(&QComboBox::currentIndexChanged),
+    this,
+    [&](const auto index) {
+      m_parameters.setCorridorBendAngle(
+        index == 0 ? mdl::CorridorBendAngle::Deg45 : mdl::CorridorBendAngle::Deg90);
+    });
+  connect(
+    directionBox,
+    QOverload<int>::of(&QComboBox::currentIndexChanged),
+    this,
+    [&](const auto index) {
+      m_parameters.setCorridorBendDirection(
+        index == 0 ? mdl::CorridorBendDirection::Left
+                   : mdl::CorridorBendDirection::Right);
+    });
+  connect(
+    segmentsBox,
+    QOverload<int>::of(&QSpinBox::valueChanged),
+    this,
+    [&](const auto segments) { m_parameters.setCorridorBendSegments(size_t(segments)); });
+
+  addWidget(angleLabel);
+  addWidget(angleBox);
+  addWidget(directionLabel);
+  addWidget(directionBox);
+  addWidget(segmentsLabel);
+  addWidget(segmentsBox);
+  addApplyButton(document);
+
+  m_notifierConnection += m_parameters.parametersDidChangeNotifier.connect([=, this]() {
+    angleBox->setCurrentIndex(
+      m_parameters.corridorBendAngle() == mdl::CorridorBendAngle::Deg45 ? 0 : 1);
+    directionBox->setCurrentIndex(
+      m_parameters.corridorBendDirection() == mdl::CorridorBendDirection::Left ? 0 : 1);
+    segmentsBox->setValue(int(m_parameters.corridorBendSegments()));
+  });
+}
+
+DrawShapeToolCorridorTJunctionExtensionPage::DrawShapeToolCorridorTJunctionExtensionPage(
+  MapDocument& document, DrawShapeToolParameters& parameters, QWidget* parent)
+  : DrawShapeToolCorridorProfileExtensionPage{parameters, true, parent}
+{
+  auto* widthLabel = new QLabel{tr("Corridor width:")};
+  auto* widthBox = new QDoubleSpinBox{};
+  widthBox->setRange(1.0, 4096.0);
+  widthBox->setDecimals(0);
+  widthBox->setMinimum(2.0 * m_parameters.corridorShape().wallThickness + 1.0);
+  widthBox->setValue(m_parameters.corridorJunctionWidth());
+
+  connect(
+    widthBox,
+    QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+    this,
+    [&](const auto width) { m_parameters.setCorridorJunctionWidth(width); });
+
+  addWidget(widthLabel);
+  addWidget(widthBox);
+  addApplyButton(document);
+
+  m_notifierConnection += m_parameters.parametersDidChangeNotifier.connect([=, this]() {
+    widthBox->setMinimum(2.0 * m_parameters.corridorShape().wallThickness + 1.0);
+    widthBox->setValue(m_parameters.corridorJunctionWidth());
   });
 }
 

@@ -38,6 +38,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
+#include <optional>
 #include <ranges>
 #include <string>
 #include <utility>
@@ -805,6 +807,62 @@ std::vector<CorridorBoundaryPoint> makeCorridorBoundary(
   return result;
 }
 
+std::optional<std::string> corridorShapeError(const CorridorShape& corridorShape)
+{
+  if (corridorShape.wallThickness <= 0.0)
+  {
+    return "Corridor wall thickness must be greater than zero";
+  }
+  if (corridorShape.cornerRadius <= 0.0)
+  {
+    return "Corridor corner radius must be greater than zero";
+  }
+  if (corridorShape.cornerSegments == 0u)
+  {
+    return "Corridor corner segments must be greater than zero";
+  }
+  if (
+    corridorShape.ceilingRecessDepth < 0.0
+    || corridorShape.ceilingRecessDepth >= corridorShape.wallThickness)
+  {
+    return "Corridor ceiling recess depth must be non-negative and less than wall "
+           "thickness";
+  }
+  if (corridorShape.ceilingRecessDepth > 0.0 && corridorShape.ceilingRecessWidth <= 0.0)
+  {
+    return "Corridor ceiling recess width must be greater than zero";
+  }
+  if (
+    corridorShape.sideRecessDepth < 0.0
+    || corridorShape.sideRecessDepth >= corridorShape.wallThickness)
+  {
+    return "Corridor side recess depth must be non-negative and less than wall thickness";
+  }
+  if (corridorShape.sideRecessDepth > 0.0 && corridorShape.sideRecessHeight <= 0.0)
+  {
+    return "Corridor side recess height must be greater than zero";
+  }
+
+  return std::nullopt;
+}
+
+bool corridorShapeFits(
+  const CorridorShape& corridorShape,
+  const double width,
+  const double height,
+  const double radius)
+{
+  const auto innerRadius = std::max(radius - corridorShape.wallThickness, 0.0);
+  const auto innerTopHalfWidth = width / 2.0 - corridorShape.wallThickness - innerRadius;
+  const auto innerSideHalfHeight =
+    height / 2.0 - corridorShape.wallThickness - innerRadius;
+
+  return !(
+    (corridorShape.ceilingRecessDepth > 0.0
+     && corridorShape.ceilingRecessWidth >= 2.0 * innerTopHalfWidth)
+    || (corridorShape.sideRecessDepth > 0.0 && corridorShape.sideRecessHeight >= 2.0 * innerSideHalfHeight));
+}
+
 } // namespace
 
 Result<std::vector<Brush>> BrushBuilder::createCorridor(
@@ -813,39 +871,9 @@ Result<std::vector<Brush>> BrushBuilder::createCorridor(
   const vm::axis::type axis,
   const std::string& textureName) const
 {
-  if (corridorShape.wallThickness <= 0.0)
+  if (const auto error = corridorShapeError(corridorShape))
   {
-    return Error{"Corridor wall thickness must be greater than zero"};
-  }
-  if (corridorShape.cornerRadius <= 0.0)
-  {
-    return Error{"Corridor corner radius must be greater than zero"};
-  }
-  if (corridorShape.cornerSegments == 0u)
-  {
-    return Error{"Corridor corner segments must be greater than zero"};
-  }
-  if (
-    corridorShape.ceilingRecessDepth < 0.0
-    || corridorShape.ceilingRecessDepth >= corridorShape.wallThickness)
-  {
-    return Error{
-      "Corridor ceiling recess depth must be non-negative and less than wall thickness"};
-  }
-  if (corridorShape.ceilingRecessDepth > 0.0 && corridorShape.ceilingRecessWidth <= 0.0)
-  {
-    return Error{"Corridor ceiling recess width must be greater than zero"};
-  }
-  if (
-    corridorShape.sideRecessDepth < 0.0
-    || corridorShape.sideRecessDepth >= corridorShape.wallThickness)
-  {
-    return Error{
-      "Corridor side recess depth must be non-negative and less than wall thickness"};
-  }
-  if (corridorShape.sideRecessDepth > 0.0 && corridorShape.sideRecessHeight <= 0.0)
-  {
-    return Error{"Corridor side recess height must be greater than zero"};
+    return Error{*error};
   }
 
   const auto axes = uprightAxes(axis);
@@ -862,15 +890,7 @@ Result<std::vector<Brush>> BrushBuilder::createCorridor(
   }
 
   const auto radius = std::min({corridorShape.cornerRadius, width / 2.0, height / 2.0});
-  const auto innerRadius = std::max(radius - corridorShape.wallThickness, 0.0);
-  const auto innerTopHalfWidth = width / 2.0 - corridorShape.wallThickness - innerRadius;
-  const auto innerSideHalfHeight =
-    height / 2.0 - corridorShape.wallThickness - innerRadius;
-
-  if (
-    (corridorShape.ceilingRecessDepth > 0.0
-     && corridorShape.ceilingRecessWidth >= 2.0 * innerTopHalfWidth)
-    || (corridorShape.sideRecessDepth > 0.0 && corridorShape.sideRecessHeight >= 2.0 * innerSideHalfHeight))
+  if (!corridorShapeFits(corridorShape, width, height, radius))
   {
     return Result<std::vector<Brush>>{std::vector<Brush>{}};
   }
@@ -909,6 +929,210 @@ Result<std::vector<Brush>> BrushBuilder::createCorridor(
   }
 
   return brushes | kdl::fold;
+}
+
+Result<std::vector<Brush>> BrushBuilder::createCorridorBend(
+  const vm::bbox3d& bounds,
+  const CorridorShape& corridorShape,
+  const vm::axis::type axis,
+  const CorridorBendAngle angle,
+  const CorridorBendDirection direction,
+  const size_t segmentsPer45Degrees,
+  const std::string& textureName) const
+{
+  if (const auto error = corridorShapeError(corridorShape))
+  {
+    return Error{*error};
+  }
+  if (axis == vm::axis::z)
+  {
+    return Error{"Corridor bends require a horizontal X or Y axis"};
+  }
+  if (segmentsPer45Degrees == 0u)
+  {
+    return Error{"Corridor bend segments must be greater than zero"};
+  }
+
+  const auto axes = uprightAxes(axis);
+  const auto width = bounds.size()[axes.span];
+  const auto height = bounds.size()[axes.vertical];
+  const auto depth = bounds.size()[axes.tunnel];
+  if (
+    width <= 2.0 * corridorShape.wallThickness
+    || height <= 2.0 * corridorShape.wallThickness || depth <= 0.0)
+  {
+    return Result<std::vector<Brush>>{std::vector<Brush>{}};
+  }
+
+  const auto profileRadius =
+    std::min({corridorShape.cornerRadius, width / 2.0, height / 2.0});
+  if (!corridorShapeFits(corridorShape, width, height, profileRadius))
+  {
+    return Result<std::vector<Brush>>{std::vector<Brush>{}};
+  }
+
+  const auto bendAngle =
+    angle == CorridorBendAngle::Deg45 ? vm::Cd::quarter_pi() : vm::Cd::half_pi();
+  const auto centerlineRadius = depth / std::sin(bendAngle) - width / 2.0;
+  if (centerlineRadius <= width / 2.0)
+  {
+    return Result<std::vector<Brush>>{std::vector<Brush>{}};
+  }
+
+  const auto crossSectionBounds = vm::bbox2d{
+    {bounds.min[axes.span], bounds.min[axes.vertical]},
+    {bounds.max[axes.span], bounds.max[axes.vertical]},
+  };
+  const auto boundary =
+    makeCorridorBoundary(crossSectionBounds, corridorShape, profileRadius);
+  const auto spanCenter = crossSectionBounds.center().x();
+  auto turnSign = direction == CorridorBendDirection::Left ? 1.0 : -1.0;
+  if (axis == vm::axis::y)
+  {
+    turnSign = -turnSign;
+  }
+
+  const auto toPoint = [&](const vm::vec2d& p, const double theta) {
+    const auto u = p.x() - spanCenter;
+    auto result = vm::vec3d{};
+    result[axes.tunnel] = bounds.min[axes.tunnel] + centerlineRadius * std::sin(theta)
+                          - turnSign * u * std::sin(theta);
+    result[axes.span] = spanCenter + turnSign * centerlineRadius * (1.0 - std::cos(theta))
+                        + u * std::cos(theta);
+    result[axes.vertical] = p.y();
+    return result;
+  };
+
+  const auto numSegments =
+    segmentsPer45Degrees * (angle == CorridorBendAngle::Deg90 ? 2u : 1u);
+  auto brushes = std::vector<Result<Brush>>{};
+  brushes.reserve(boundary.size() * numSegments);
+  for (size_t segmentIndex = 0u; segmentIndex < numSegments; ++segmentIndex)
+  {
+    const auto theta0 = bendAngle * double(segmentIndex) / double(numSegments);
+    const auto theta1 = bendAngle * double(segmentIndex + 1u) / double(numSegments);
+    for (size_t boundaryIndex = 0u; boundaryIndex < boundary.size(); ++boundaryIndex)
+    {
+      const auto& current = boundary[boundaryIndex];
+      const auto& next = boundary[(boundaryIndex + 1u) % boundary.size()];
+      const auto vertices = std::vector{
+        toPoint(current.outer, theta0),
+        toPoint(current.outer, theta1),
+        toPoint(next.outer, theta0),
+        toPoint(next.outer, theta1),
+        toPoint(current.inner, theta0),
+        toPoint(current.inner, theta1),
+        toPoint(next.inner, theta0),
+        toPoint(next.inner, theta1),
+      };
+      brushes.push_back(createBrush(vertices, textureName));
+    }
+  }
+
+  return brushes | kdl::fold;
+}
+
+Result<std::vector<Brush>> BrushBuilder::createCorridorTJunction(
+  const vm::bbox3d& bounds,
+  const CorridorShape& corridorShape,
+  const vm::axis::type axis,
+  const double corridorWidth,
+  const std::string& textureName) const
+{
+  if (const auto error = corridorShapeError(corridorShape))
+  {
+    return Error{*error};
+  }
+  if (axis == vm::axis::z)
+  {
+    return Error{"Corridor T-junctions require a horizontal X or Y axis"};
+  }
+  if (corridorWidth <= 0.0)
+  {
+    return Error{"Corridor T-junction width must be greater than zero"};
+  }
+
+  const auto axes = uprightAxes(axis);
+  const auto height = bounds.size()[axes.vertical];
+  const auto tunnelLength = bounds.size()[axes.tunnel];
+  const auto crossbarLength = bounds.size()[axes.span];
+  if (
+    corridorWidth <= 2.0 * corridorShape.wallThickness
+    || height <= 2.0 * corridorShape.wallThickness || tunnelLength <= corridorWidth
+    || crossbarLength <= corridorWidth)
+  {
+    return Result<std::vector<Brush>>{std::vector<Brush>{}};
+  }
+
+  const auto profileRadius =
+    std::min({corridorShape.cornerRadius, corridorWidth / 2.0, height / 2.0});
+  if (!corridorShapeFits(corridorShape, corridorWidth, height, profileRadius))
+  {
+    return Result<std::vector<Brush>>{std::vector<Brush>{}};
+  }
+
+  const auto tunnelMax = bounds.max[axes.tunnel];
+  const auto spanMin = bounds.min[axes.span];
+  const auto spanMax = bounds.max[axes.span];
+  const auto spanCenter = (spanMin + spanMax) / 2.0;
+  const auto halfWidth = corridorWidth / 2.0;
+  const auto branchPlane = tunnelMax - corridorWidth;
+  const auto crossbarAxis = vm::axis::type(axes.span);
+
+  auto stemBounds = bounds;
+  stemBounds.max[axes.tunnel] = branchPlane;
+  stemBounds.min[axes.span] = spanCenter - halfWidth;
+  stemBounds.max[axes.span] = spanCenter + halfWidth;
+
+  auto lowerCrossbarBounds = bounds;
+  lowerCrossbarBounds.min[axes.tunnel] = branchPlane;
+  lowerCrossbarBounds.max[axes.span] = spanCenter - halfWidth;
+
+  auto centerCrossbarBounds = bounds;
+  centerCrossbarBounds.min[axes.tunnel] = branchPlane;
+  centerCrossbarBounds.min[axes.span] = spanCenter - halfWidth;
+  centerCrossbarBounds.max[axes.span] = spanCenter + halfWidth;
+
+  auto upperCrossbarBounds = bounds;
+  upperCrossbarBounds.min[axes.tunnel] = branchPlane;
+  upperCrossbarBounds.min[axes.span] = spanCenter + halfWidth;
+
+  auto centerResult =
+    createCorridor(centerCrossbarBounds, corridorShape, crossbarAxis, textureName)
+    | kdl::transform([&](auto brushes) {
+        const auto branchSideLimit = branchPlane + profileRadius + vm::Cd::almost_zero();
+        std::erase_if(brushes, [&](const auto& brush) {
+          return brush.bounds().max[axes.tunnel] <= branchSideLimit;
+        });
+        return brushes;
+      });
+
+  auto partResults = std::vector<Result<std::vector<Brush>>>{};
+  partResults.reserve(4u);
+  partResults.push_back(createCorridor(stemBounds, corridorShape, axis, textureName));
+  partResults.push_back(
+    createCorridor(lowerCrossbarBounds, corridorShape, crossbarAxis, textureName));
+  partResults.push_back(std::move(centerResult));
+  partResults.push_back(
+    createCorridor(upperCrossbarBounds, corridorShape, crossbarAxis, textureName));
+
+  return partResults | kdl::fold | kdl::transform([](auto parts) {
+           auto brushes = std::vector<Brush>{};
+           auto brushCount = size_t{0u};
+           for (const auto& part : parts)
+           {
+             brushCount += part.size();
+           }
+           brushes.reserve(brushCount);
+           for (auto& part : parts)
+           {
+             brushes.insert(
+               brushes.end(),
+               std::make_move_iterator(part.begin()),
+               std::make_move_iterator(part.end()));
+           }
+           return brushes;
+         });
 }
 
 namespace
