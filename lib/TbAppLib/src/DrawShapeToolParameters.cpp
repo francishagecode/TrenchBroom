@@ -134,4 +134,32 @@ void DrawShapeToolParameters::setStairDirection(const StairDirection stairDirect
   }
 }
 
+vm::axis::type DrawShapeToolParameters::corridorAxis() const
+{
+  return m_corridorAxis;
+}
+
+void DrawShapeToolParameters::setCorridorAxis(const vm::axis::type axis)
+{
+  if (axis != m_corridorAxis)
+  {
+    m_corridorAxis = axis;
+    parametersDidChangeNotifier();
+  }
+}
+
+const mdl::CorridorShape& DrawShapeToolParameters::corridorShape() const
+{
+  return m_corridorShape;
+}
+
+void DrawShapeToolParameters::setCorridorShape(mdl::CorridorShape corridorShape)
+{
+  if (corridorShape != m_corridorShape)
+  {
+    m_corridorShape = std::move(corridorShape);
+    parametersDidChangeNotifier();
+  }
+}
+
 } // namespace tb::ui

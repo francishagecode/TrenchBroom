@@ -512,14 +512,14 @@ namespace
 
 // Maps the tunnel (extrusion) axis to the span and vertical axes of the arch's
 // cross-section. Arches rise along world Z where possible so they stand upright.
-struct ArchAxes
+struct UprightAxes
 {
   size_t tunnel;
   size_t span;
   size_t vertical;
 };
 
-ArchAxes archAxes(const vm::axis::type axis)
+UprightAxes uprightAxes(const vm::axis::type axis)
 {
   switch (axis)
   {
@@ -548,7 +548,7 @@ Result<std::vector<Brush>> BrushBuilder::createArch(
   const vm::axis::type axis,
   const std::string& textureName) const
 {
-  const auto axes = archAxes(axis);
+  const auto axes = uprightAxes(axis);
 
   const auto sMin = bounds.min[axes.span];
   const auto sMax = bounds.max[axes.span];
@@ -650,6 +650,265 @@ Result<std::vector<Brush>> BrushBuilder::createArch(
                       })
                     | kdl::values();
            });
+}
+
+namespace
+{
+
+struct CorridorBoundaryPoint
+{
+  vm::vec2d outer;
+  vm::vec2d inner;
+};
+
+vm::vec2d roundedRectPoint(
+  const vm::vec2d& center,
+  const vm::vec2d& halfSize,
+  const double radius,
+  const vm::vec2d& corner,
+  const double angle)
+{
+  const auto cornerCenter = center + corner * (halfSize - vm::vec2d::fill(radius));
+  return cornerCenter + vm::vec2d{std::cos(angle), std::sin(angle)} * radius;
+}
+
+std::vector<CorridorBoundaryPoint> makeCorridorBoundary(
+  const vm::bbox2d& bounds, const CorridorShape& shape, const double radius)
+{
+  const auto center = bounds.center();
+  const auto outerHalfSize = bounds.size() / 2.0;
+  const auto innerHalfSize = outerHalfSize - vm::vec2d::fill(shape.wallThickness);
+  const auto innerRadius = std::max(radius - shape.wallThickness, 0.0);
+
+  const auto point = [&](const vm::vec2d& corner, const double angle) {
+    return CorridorBoundaryPoint{
+      roundedRectPoint(center, outerHalfSize, radius, corner, angle),
+      roundedRectPoint(center, innerHalfSize, innerRadius, corner, angle),
+    };
+  };
+
+  auto boundary = std::vector<CorridorBoundaryPoint>{};
+  boundary.reserve(
+    4u * shape.cornerSegments + 4u + (shape.ceilingRecessDepth > 0.0 ? 4u : 0u)
+    + (shape.sideRecessDepth > 0.0 ? 8u : 0u));
+
+  const auto append = [&](const vm::vec2d& outer, const vm::vec2d& inner) {
+    boundary.push_back({outer, inner});
+  };
+  const auto appendCorner =
+    [&](const vm::vec2d& corner, const double startAngle, const bool includeEnd) {
+      const auto end = includeEnd ? shape.cornerSegments : shape.cornerSegments - 1u;
+      for (size_t i = 1u; i <= end; ++i)
+      {
+        const auto angle =
+          startAngle + vm::Cd::half_pi() * double(i) / double(shape.cornerSegments);
+        boundary.push_back(point(corner, angle));
+      }
+    };
+
+  // Start at the upper-right tangent and walk counter-clockwise around the shell.
+  boundary.push_back(point({1.0, 1.0}, vm::Cd::half_pi()));
+
+  if (shape.ceilingRecessDepth > 0.0)
+  {
+    const auto halfWidth = shape.ceilingRecessWidth / 2.0;
+    const auto transitionWidth =
+      std::min(shape.wallThickness, innerHalfSize.x() - innerRadius - halfWidth);
+    const auto outerY = bounds.max.y();
+    const auto innerY = bounds.max.y() - shape.wallThickness;
+    append(
+      {center.x() + halfWidth + transitionWidth, outerY},
+      {center.x() + halfWidth, innerY});
+    append(
+      {center.x() + halfWidth, outerY},
+      {center.x() + halfWidth, innerY + shape.ceilingRecessDepth});
+    append(
+      {center.x() - halfWidth, outerY},
+      {center.x() - halfWidth, innerY + shape.ceilingRecessDepth});
+    append(
+      {center.x() - halfWidth - transitionWidth, outerY},
+      {center.x() - halfWidth, innerY});
+  }
+
+  boundary.push_back(point({-1.0, 1.0}, vm::Cd::half_pi()));
+  appendCorner({-1.0, 1.0}, vm::Cd::half_pi(), true);
+
+  if (shape.sideRecessDepth > 0.0)
+  {
+    const auto halfHeight = shape.sideRecessHeight / 2.0;
+    const auto transitionHeight =
+      std::min(shape.wallThickness, innerHalfSize.y() - innerRadius - halfHeight);
+    const auto outerX = bounds.min.x();
+    const auto innerX = bounds.min.x() + shape.wallThickness;
+    append(
+      {outerX, center.y() + halfHeight + transitionHeight},
+      {innerX, center.y() + halfHeight});
+    append(
+      {outerX, center.y() + halfHeight},
+      {innerX - shape.sideRecessDepth, center.y() + halfHeight});
+    append(
+      {outerX, center.y() - halfHeight},
+      {innerX - shape.sideRecessDepth, center.y() - halfHeight});
+    append(
+      {outerX, center.y() - halfHeight - transitionHeight},
+      {innerX, center.y() - halfHeight});
+  }
+
+  boundary.push_back(point({-1.0, -1.0}, vm::Cd::pi()));
+  appendCorner({-1.0, -1.0}, vm::Cd::pi(), true);
+
+  boundary.push_back(point({1.0, -1.0}, 3.0 * vm::Cd::half_pi()));
+  appendCorner({1.0, -1.0}, 3.0 * vm::Cd::half_pi(), true);
+
+  if (shape.sideRecessDepth > 0.0)
+  {
+    const auto halfHeight = shape.sideRecessHeight / 2.0;
+    const auto transitionHeight =
+      std::min(shape.wallThickness, innerHalfSize.y() - innerRadius - halfHeight);
+    const auto outerX = bounds.max.x();
+    const auto innerX = bounds.max.x() - shape.wallThickness;
+    append(
+      {outerX, center.y() - halfHeight - transitionHeight},
+      {innerX, center.y() - halfHeight});
+    append(
+      {outerX, center.y() - halfHeight},
+      {innerX + shape.sideRecessDepth, center.y() - halfHeight});
+    append(
+      {outerX, center.y() + halfHeight},
+      {innerX + shape.sideRecessDepth, center.y() + halfHeight});
+    append(
+      {outerX, center.y() + halfHeight + transitionHeight},
+      {innerX, center.y() + halfHeight});
+  }
+
+  boundary.push_back(point({1.0, 1.0}, 0.0));
+  appendCorner({1.0, 1.0}, 0.0, false);
+
+  auto result = std::vector<CorridorBoundaryPoint>{};
+  result.reserve(boundary.size());
+  for (const auto& boundaryPoint : boundary)
+  {
+    if (
+      result.empty() || boundaryPoint.outer != result.back().outer
+      || boundaryPoint.inner != result.back().inner)
+    {
+      result.push_back(boundaryPoint);
+    }
+  }
+  if (
+    result.size() > 1u && result.front().outer == result.back().outer
+    && result.front().inner == result.back().inner)
+  {
+    result.pop_back();
+  }
+
+  return result;
+}
+
+} // namespace
+
+Result<std::vector<Brush>> BrushBuilder::createCorridor(
+  const vm::bbox3d& bounds,
+  const CorridorShape& corridorShape,
+  const vm::axis::type axis,
+  const std::string& textureName) const
+{
+  if (corridorShape.wallThickness <= 0.0)
+  {
+    return Error{"Corridor wall thickness must be greater than zero"};
+  }
+  if (corridorShape.cornerRadius <= 0.0)
+  {
+    return Error{"Corridor corner radius must be greater than zero"};
+  }
+  if (corridorShape.cornerSegments == 0u)
+  {
+    return Error{"Corridor corner segments must be greater than zero"};
+  }
+  if (
+    corridorShape.ceilingRecessDepth < 0.0
+    || corridorShape.ceilingRecessDepth >= corridorShape.wallThickness)
+  {
+    return Error{
+      "Corridor ceiling recess depth must be non-negative and less than wall thickness"};
+  }
+  if (corridorShape.ceilingRecessDepth > 0.0 && corridorShape.ceilingRecessWidth <= 0.0)
+  {
+    return Error{"Corridor ceiling recess width must be greater than zero"};
+  }
+  if (
+    corridorShape.sideRecessDepth < 0.0
+    || corridorShape.sideRecessDepth >= corridorShape.wallThickness)
+  {
+    return Error{
+      "Corridor side recess depth must be non-negative and less than wall thickness"};
+  }
+  if (corridorShape.sideRecessDepth > 0.0 && corridorShape.sideRecessHeight <= 0.0)
+  {
+    return Error{"Corridor side recess height must be greater than zero"};
+  }
+
+  const auto axes = uprightAxes(axis);
+  const auto width = bounds.size()[axes.span];
+  const auto height = bounds.size()[axes.vertical];
+  const auto depth = bounds.size()[axes.tunnel];
+
+  // The bounds pass through degenerate and undersized states while the user drags.
+  if (
+    width <= 2.0 * corridorShape.wallThickness
+    || height <= 2.0 * corridorShape.wallThickness || depth <= 0.0)
+  {
+    return Result<std::vector<Brush>>{std::vector<Brush>{}};
+  }
+
+  const auto radius = std::min({corridorShape.cornerRadius, width / 2.0, height / 2.0});
+  const auto innerRadius = std::max(radius - corridorShape.wallThickness, 0.0);
+  const auto innerTopHalfWidth = width / 2.0 - corridorShape.wallThickness - innerRadius;
+  const auto innerSideHalfHeight =
+    height / 2.0 - corridorShape.wallThickness - innerRadius;
+
+  if (
+    (corridorShape.ceilingRecessDepth > 0.0
+     && corridorShape.ceilingRecessWidth >= 2.0 * innerTopHalfWidth)
+    || (corridorShape.sideRecessDepth > 0.0 && corridorShape.sideRecessHeight >= 2.0 * innerSideHalfHeight))
+  {
+    return Result<std::vector<Brush>>{std::vector<Brush>{}};
+  }
+
+  const auto crossSectionBounds = vm::bbox2d{
+    {bounds.min[axes.span], bounds.min[axes.vertical]},
+    {bounds.max[axes.span], bounds.max[axes.vertical]},
+  };
+  const auto boundary = makeCorridorBoundary(crossSectionBounds, corridorShape, radius);
+
+  const auto toPoint = [&](const vm::vec2d& p, const double w) {
+    auto result = vm::vec3d{};
+    result[axes.span] = p.x();
+    result[axes.vertical] = p.y();
+    result[axes.tunnel] = w;
+    return result;
+  };
+
+  auto brushes = std::vector<Result<Brush>>{};
+  brushes.reserve(boundary.size());
+  for (size_t i = 0u; i < boundary.size(); ++i)
+  {
+    const auto& current = boundary[i];
+    const auto& next = boundary[(i + 1u) % boundary.size()];
+    const auto vertices = std::vector{
+      toPoint(current.outer, bounds.min[axes.tunnel]),
+      toPoint(current.outer, bounds.max[axes.tunnel]),
+      toPoint(next.outer, bounds.min[axes.tunnel]),
+      toPoint(next.outer, bounds.max[axes.tunnel]),
+      toPoint(current.inner, bounds.min[axes.tunnel]),
+      toPoint(current.inner, bounds.max[axes.tunnel]),
+      toPoint(next.inner, bounds.min[axes.tunnel]),
+      toPoint(next.inner, bounds.max[axes.tunnel]),
+    };
+    brushes.push_back(createBrush(vertices, textureName));
+  }
+
+  return brushes | kdl::fold;
 }
 
 namespace

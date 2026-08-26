@@ -476,6 +476,34 @@ TEST_CASE("DrawShapeToolArchExtension")
   }
 }
 
+TEST_CASE("DrawShapeToolCorridorExtension")
+{
+  auto fixture = MapDocumentFixture{};
+  auto& document = fixture.create();
+  auto extension = DrawShapeToolCorridorExtension{document};
+  auto parameters = DrawShapeToolParameters{};
+
+  SECTION("createBrushes wires corridor-specific parameters to the brush builder")
+  {
+    const auto bounds = vm::bbox3d{{-128, -128, 0}, {128, 128, 160}};
+
+    extension.createBrushes(bounds, parameters)
+      | kdl::transform([&](const auto& brushes) {
+          CHECK(brushes.size() == 24u);
+          CHECK(
+            kdl::fold_left_first(
+              brushes
+                | std::views::transform([](const auto& brush) { return brush.bounds(); }),
+              [](const auto& lhs, const auto& rhs) { return vm::merge(lhs, rhs); })
+            == bounds);
+        })
+      | kdl::transform_error([](const auto& e) { FAIL(e); });
+  }
+
+  CHECK(extension.name() == "Corridor");
+  CHECK(extension.iconPath() == "ShapeTool_Corridor.svg");
+}
+
 TEST_CASE("DrawShapeToolParameters")
 {
   auto parameters = DrawShapeToolParameters{};
@@ -489,6 +517,18 @@ TEST_CASE("DrawShapeToolParameters")
     REQUIRE(parameters.accuracy() == 1);
     REQUIRE(parameters.stepHeight() == 16.0);
     REQUIRE(parameters.stairDirection() == DrawShapeToolParameters::StairDirection::PosX);
+    REQUIRE(parameters.corridorAxis() == vm::axis::x);
+    REQUIRE(
+      parameters.corridorShape()
+      == mdl::CorridorShape{
+        .wallThickness = 16.0,
+        .cornerRadius = 32.0,
+        .cornerSegments = 2u,
+        .ceilingRecessWidth = 64.0,
+        .ceilingRecessDepth = 8.0,
+        .sideRecessHeight = 48.0,
+        .sideRecessDepth = 8.0,
+      });
   }
 
   SECTION("Axis modifications")
@@ -612,6 +652,40 @@ TEST_CASE("DrawShapeToolParameters")
     parameters.setStairDirection(DrawShapeToolParameters::StairDirection::PosY);
     REQUIRE(parameters.stairDirection() == DrawShapeToolParameters::StairDirection::PosY);
     CHECK(parametersDidChange.notifications.size() == 2u);
+  }
+
+  SECTION("Corridor axis modifications")
+  {
+    auto parametersDidChange = Observer<>{parameters.parametersDidChangeNotifier};
+
+    parameters.setCorridorAxis(vm::axis::x);
+    CHECK(parametersDidChange.notifications.empty());
+
+    parameters.setCorridorAxis(vm::axis::y);
+    REQUIRE(parameters.corridorAxis() == vm::axis::y);
+    CHECK(parametersDidChange.notifications.size() == 1u);
+
+    parameters.setCorridorAxis(vm::axis::y);
+    CHECK(parametersDidChange.notifications.size() == 1u);
+  }
+
+  SECTION("Corridor shape modifications")
+  {
+    auto parametersDidChange = Observer<>{parameters.parametersDidChangeNotifier};
+
+    const auto defaultShape = parameters.corridorShape();
+    parameters.setCorridorShape(defaultShape);
+    CHECK(parametersDidChange.notifications.empty());
+
+    auto changedShape = defaultShape;
+    changedShape.cornerRadius = 48.0;
+    changedShape.cornerSegments = 3u;
+    parameters.setCorridorShape(changedShape);
+    REQUIRE(parameters.corridorShape() == changedShape);
+    CHECK(parametersDidChange.notifications.size() == 1u);
+
+    parameters.setCorridorShape(changedShape);
+    CHECK(parametersDidChange.notifications.size() == 1u);
   }
 
   SECTION("CircleShape modifications")

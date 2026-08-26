@@ -37,6 +37,19 @@ class Brush;
 class ModelFactory;
 enum class MapFormat;
 
+struct CorridorShape
+{
+  double wallThickness;
+  double cornerRadius;
+  size_t cornerSegments;
+  double ceilingRecessWidth;
+  double ceilingRecessDepth;
+  double sideRecessHeight;
+  double sideRecessDepth;
+
+  bool operator==(const CorridorShape&) const = default;
+};
+
 class BrushBuilder
 {
 private:
@@ -116,6 +129,18 @@ public:
     const vm::bbox3d& bounds,
     double thickness,
     const CircleShape& circleShape,
+    vm::axis::type axis,
+    const std::string& textureName) const;
+
+  /**
+   * Creates an open-ended corridor shell from convex brush fragments. `axis` is the
+   * corridor's extrusion direction. The cross-section remains upright in world Z where
+   * possible and has rounded corners, a flat floor, and optional geometric recesses in
+   * the ceiling and side walls.
+   */
+  Result<std::vector<Brush>> createCorridor(
+    const vm::bbox3d& bounds,
+    const CorridorShape& corridorShape,
     vm::axis::type axis,
     const std::string& textureName) const;
 

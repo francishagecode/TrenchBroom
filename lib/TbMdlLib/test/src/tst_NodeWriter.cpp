@@ -445,6 +445,41 @@ TEST_CASE("NodeWriter")
     CHECK(actual == expected);
   }
 
+  SECTION("writeValveCorridor")
+  {
+    const auto worldBounds = vm::bbox3d{8192.0};
+    auto worldNode = WorldNode{{}, {}, MapFormat::Valve};
+    auto builder = BrushBuilder{worldNode.mapFormat(), worldBounds};
+    const auto shape = CorridorShape{
+      .wallThickness = 16.0,
+      .cornerRadius = 32.0,
+      .cornerSegments = 2u,
+      .ceilingRecessWidth = 64.0,
+      .ceilingRecessDepth = 8.0,
+      .sideRecessHeight = 48.0,
+      .sideRecessDepth = 8.0,
+    };
+
+    auto brushes = builder.createCorridor(
+                     {{-128, -128, 0}, {128, 128, 160}},
+                     shape,
+                     vm::axis::x,
+                     "AquilariusRetroTextures/t13")
+                   | kdl::value();
+    for (auto& brush : brushes)
+    {
+      worldNode.defaultLayer()->addChild(new BrushNode{std::move(brush)});
+    }
+
+    auto str = std::stringstream{};
+    auto writer = NodeWriter{worldNode, str};
+    writer.writeMap(taskManager);
+
+    const auto actual = str.str();
+    CHECK(actual.find("// brush 23") != std::string::npos);
+    CHECK(actual.find("AquilariusRetroTextures/t13 [ ") != std::string::npos);
+  }
+
   SECTION("writeWorldspawnWithBrushInCustomLayer")
   {
     const auto worldBounds = vm::bbox3d{8192.0};

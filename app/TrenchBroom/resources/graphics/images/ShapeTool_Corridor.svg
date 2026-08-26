@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24">
+  <path
+    fill="#ff7f01"
+    fill-opacity="0.247059"
+    fill-rule="evenodd"
+    stroke="#ff8000"
+    stroke-linejoin="round"
+    d="M8 2.5h8a5.5 5.5 0 0 1 5.5 5.5v8a5.5 5.5 0 0 1-5.5 5.5H8A5.5 5.5 0 0 1 2.5 16V8A5.5 5.5 0 0 1 8 2.5Zm2 4.5h4v1h2a1 1 0 0 1 1 1v1h1.5v4H17v1a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-1H5.5v-4H7V9a1 1 0 0 1 1-1h2Z"/>
+</svg>

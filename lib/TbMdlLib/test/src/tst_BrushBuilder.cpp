@@ -515,6 +515,129 @@ TEST_CASE("BrushBuilder")
     }
   }
 
+  SECTION("createCorridor")
+  {
+    auto builder = BrushBuilder{MapFormat::Standard, worldBounds};
+    const auto bounds = vm::bbox3d{{-128, -96, 0}, {128, 96, 128}};
+    const auto basicShape = CorridorShape{
+      .wallThickness = 16.0,
+      .cornerRadius = 48.0,
+      .cornerSegments = 2u,
+      .ceilingRecessWidth = 0.0,
+      .ceilingRecessDepth = 0.0,
+      .sideRecessHeight = 0.0,
+      .sideRecessDepth = 0.0,
+    };
+
+    SECTION("Rounded shell")
+    {
+      builder.createCorridor(bounds, basicShape, vm::axis::x, "someName")
+        | kdl::transform([&](const auto& brushes) {
+            REQUIRE(brushes.size() == 12u);
+            CHECK(getMergedBounds(brushes) == bounds);
+            CHECK(std::ranges::all_of(brushes, [](const auto& brush) {
+              return brush.fullySpecified();
+            }));
+            CHECK(std::ranges::all_of(brushes, [](const auto& brush) {
+              return std::ranges::all_of(brush.faces(), [](const auto& face) {
+                return face.materialName() == "someName";
+              });
+            }));
+          })
+        | kdl::transform_error([](const auto& e) { FAIL(e); });
+    }
+
+    SECTION("Ceiling and side recesses")
+    {
+      const auto recessedShape = CorridorShape{
+        .wallThickness = 16.0,
+        .cornerRadius = 32.0,
+        .cornerSegments = 2u,
+        .ceilingRecessWidth = 64.0,
+        .ceilingRecessDepth = 8.0,
+        .sideRecessHeight = 48.0,
+        .sideRecessDepth = 8.0,
+      };
+
+      builder.createCorridor(bounds, recessedShape, vm::axis::x, "someName")
+        | kdl::transform([&](const auto& brushes) {
+            REQUIRE(brushes.size() == 24u);
+            CHECK(getMergedBounds(brushes) == bounds);
+            CHECK(std::ranges::any_of(brushes, [](const auto& brush) {
+              return brush.hasVertex({-128, 32, 120});
+            }));
+            CHECK(std::ranges::any_of(brushes, [](const auto& brush) {
+              return brush.hasVertex({-128, -88, 88});
+            }));
+            CHECK(std::ranges::any_of(brushes, [](const auto& brush) {
+              return brush.hasVertex({-128, 88, 40});
+            }));
+          })
+        | kdl::transform_error([](const auto& e) { FAIL(e); });
+    }
+
+    SECTION("Tunnel axis")
+    {
+      const auto yBounds = vm::bbox3d{{-96, -128, 0}, {96, 128, 128}};
+      builder.createCorridor(yBounds, basicShape, vm::axis::y, "someName")
+        | kdl::transform([&](const auto& brushes) {
+            REQUIRE(brushes.size() == 12u);
+            CHECK(getMergedBounds(brushes) == yBounds);
+          })
+        | kdl::transform_error([](const auto& e) { FAIL(e); });
+    }
+
+    SECTION("Radius is clamped to bounds without degenerate fragments")
+    {
+      auto largeRadiusShape = basicShape;
+      largeRadiusShape.cornerRadius = 128.0;
+      const auto narrowBounds = vm::bbox3d{{-128, -64, 0}, {128, 64, 256}};
+
+      builder.createCorridor(narrowBounds, largeRadiusShape, vm::axis::x, "someName")
+        | kdl::transform([&](const auto& brushes) {
+            REQUIRE(brushes.size() == 10u);
+            CHECK(getMergedBounds(brushes) == narrowBounds);
+          })
+        | kdl::transform_error([](const auto& e) { FAIL(e); });
+    }
+
+    SECTION("Degenerate and undersized bounds do not error")
+    {
+      CHECK(
+        builder.createCorridor(
+          vm::bbox3d{{0, -96, 0}, {0, 96, 128}}, basicShape, vm::axis::x, "someName")
+        == Result<std::vector<Brush>>{std::vector<Brush>{}});
+      CHECK(
+        builder.createCorridor(
+          vm::bbox3d{{-128, -8, 0}, {128, 8, 128}}, basicShape, vm::axis::x, "someName")
+        == Result<std::vector<Brush>>{std::vector<Brush>{}});
+    }
+
+    SECTION("Invalid shape parameters error")
+    {
+      auto invalidShape = basicShape;
+      invalidShape.wallThickness = 0.0;
+      CHECK(
+        builder.createCorridor(bounds, invalidShape, vm::axis::x, "someName").is_error());
+
+      invalidShape = basicShape;
+      invalidShape.cornerRadius = 0.0;
+      CHECK(
+        builder.createCorridor(bounds, invalidShape, vm::axis::x, "someName").is_error());
+
+      invalidShape = basicShape;
+      invalidShape.cornerSegments = 0u;
+      CHECK(
+        builder.createCorridor(bounds, invalidShape, vm::axis::x, "someName").is_error());
+
+      invalidShape = basicShape;
+      invalidShape.ceilingRecessWidth = 64.0;
+      invalidShape.ceilingRecessDepth = 16.0;
+      CHECK(
+        builder.createCorridor(bounds, invalidShape, vm::axis::x, "someName").is_error());
+    }
+  }
+
   SECTION("createCuboid")
   {
     auto builder = BrushBuilder{MapFormat::Standard, worldBounds};

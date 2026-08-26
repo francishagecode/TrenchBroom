@@ -57,6 +57,18 @@ private:
   double m_stepHeight = 16.0;
   StairDirection m_stairDirection = StairDirection::PosX;
 
+  // For corridor shapes
+  vm::axis::type m_corridorAxis = vm::axis::x;
+  mdl::CorridorShape m_corridorShape{
+    .wallThickness = 16.0,
+    .cornerRadius = 32.0,
+    .cornerSegments = 2u,
+    .ceilingRecessWidth = 64.0,
+    .ceilingRecessDepth = 8.0,
+    .sideRecessHeight = 48.0,
+    .sideRecessDepth = 8.0,
+  };
+
 public:
   Notifier<> parametersDidChangeNotifier;
 
@@ -83,6 +95,12 @@ public:
 
   StairDirection stairDirection() const;
   void setStairDirection(StairDirection stairDirection);
+
+  vm::axis::type corridorAxis() const;
+  void setCorridorAxis(vm::axis::type axis);
+
+  const mdl::CorridorShape& corridorShape() const;
+  void setCorridorShape(mdl::CorridorShape corridorShape);
 };
 
 } // namespace tb::ui

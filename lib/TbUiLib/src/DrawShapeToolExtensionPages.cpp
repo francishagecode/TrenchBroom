@@ -24,6 +24,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDoubleSpinBox>
+#include <QGridLayout>
 #include <QLabel>
 #include <QSpinBox>
 #include <QStackedWidget>
@@ -90,6 +91,8 @@ DrawShapeToolExtensionPage* createExtensionPage(
     return new DrawShapeToolStairsExtensionPage{document, parameters, parent};
   case DrawShapeToolExtensionKind::Arch:
     return new DrawShapeToolArchShapeExtensionPage{document, parameters, parent};
+  case DrawShapeToolExtensionKind::Corridor:
+    return new DrawShapeToolCorridorShapeExtensionPage{document, parameters, parent};
   case DrawShapeToolExtensionKind::Cylinder:
     return new DrawShapeToolCylinderShapeExtensionPage{document, parameters, parent};
   case DrawShapeToolExtensionKind::Cone:
@@ -399,6 +402,147 @@ DrawShapeToolArchShapeExtensionPage::DrawShapeToolArchShapeExtensionPage(
 
   m_notifierConnection += m_parameters.parametersDidChangeNotifier.connect(
     [=, this]() { thicknessBox->setValue(m_parameters.thickness()); });
+}
+
+DrawShapeToolCorridorShapeExtensionPage::DrawShapeToolCorridorShapeExtensionPage(
+  MapDocument& document, DrawShapeToolParameters& parameters, QWidget* parent)
+  : DrawShapeToolExtensionPage{parent}
+  , m_parameters{parameters}
+{
+  auto* axisBox = new QComboBox{};
+  axisBox->addItems({tr("X"), tr("Y"), tr("Z")});
+
+  const auto makeDimensionBox = []() {
+    auto* box = new QDoubleSpinBox{};
+    box->setRange(0.0, 4096.0);
+    box->setDecimals(0);
+    return box;
+  };
+
+  auto* wallThicknessBox = makeDimensionBox();
+  wallThicknessBox->setMinimum(1.0);
+  auto* cornerRadiusBox = makeDimensionBox();
+  cornerRadiusBox->setMinimum(1.0);
+  auto* cornerSegmentsBox = new QSpinBox{};
+  cornerSegmentsBox->setRange(1, 16);
+  auto* ceilingRecessWidthBox = makeDimensionBox();
+  auto* ceilingRecessDepthBox = makeDimensionBox();
+  auto* sideRecessHeightBox = makeDimensionBox();
+  auto* sideRecessDepthBox = makeDimensionBox();
+
+  auto* controlsLayout = new QGridLayout{};
+  controlsLayout->setContentsMargins(QMargins{});
+  controlsLayout->setHorizontalSpacing(LayoutConstants::MediumHMargin);
+  controlsLayout->setVerticalSpacing(LayoutConstants::NarrowVMargin);
+
+  controlsLayout->addWidget(new QLabel{tr("Axis:")}, 0, 0);
+  controlsLayout->addWidget(axisBox, 0, 1);
+  controlsLayout->addWidget(new QLabel{tr("Wall:")}, 0, 2);
+  controlsLayout->addWidget(wallThicknessBox, 0, 3);
+  controlsLayout->addWidget(new QLabel{tr("Radius:")}, 0, 4);
+  controlsLayout->addWidget(cornerRadiusBox, 0, 5);
+  controlsLayout->addWidget(new QLabel{tr("Corner steps:")}, 0, 6);
+  controlsLayout->addWidget(cornerSegmentsBox, 0, 7);
+  controlsLayout->addWidget(new QLabel{tr("Ceiling width/depth:")}, 1, 0, 1, 2);
+  controlsLayout->addWidget(ceilingRecessWidthBox, 1, 2);
+  controlsLayout->addWidget(ceilingRecessDepthBox, 1, 3);
+  controlsLayout->addWidget(new QLabel{tr("Side height/depth:")}, 1, 4, 1, 2);
+  controlsLayout->addWidget(sideRecessHeightBox, 1, 6);
+  controlsLayout->addWidget(sideRecessDepthBox, 1, 7);
+
+  auto* controlsWidget = new QWidget{};
+  controlsWidget->setLayout(controlsLayout);
+
+  connect(
+    axisBox,
+    QOverload<int>::of(&QComboBox::currentIndexChanged),
+    this,
+    [&](const auto index) { m_parameters.setCorridorAxis(vm::axis::type(index)); });
+  connect(
+    wallThicknessBox,
+    QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+    this,
+    [&](const auto wallThickness) {
+      auto shape = m_parameters.corridorShape();
+      shape.wallThickness = wallThickness;
+      const auto maxRecessDepth = std::max(0.0, wallThickness - 1.0);
+      shape.ceilingRecessDepth = std::min(shape.ceilingRecessDepth, maxRecessDepth);
+      shape.sideRecessDepth = std::min(shape.sideRecessDepth, maxRecessDepth);
+      m_parameters.setCorridorShape(shape);
+    });
+  connect(
+    cornerRadiusBox,
+    QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+    this,
+    [&](const auto cornerRadius) {
+      auto shape = m_parameters.corridorShape();
+      shape.cornerRadius = cornerRadius;
+      m_parameters.setCorridorShape(shape);
+    });
+  connect(
+    cornerSegmentsBox,
+    QOverload<int>::of(&QSpinBox::valueChanged),
+    this,
+    [&](const auto cornerSegments) {
+      auto shape = m_parameters.corridorShape();
+      shape.cornerSegments = size_t(cornerSegments);
+      m_parameters.setCorridorShape(shape);
+    });
+  connect(
+    ceilingRecessWidthBox,
+    QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+    this,
+    [&](const auto ceilingRecessWidth) {
+      auto shape = m_parameters.corridorShape();
+      shape.ceilingRecessWidth = ceilingRecessWidth;
+      m_parameters.setCorridorShape(shape);
+    });
+  connect(
+    ceilingRecessDepthBox,
+    QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+    this,
+    [&](const auto ceilingRecessDepth) {
+      auto shape = m_parameters.corridorShape();
+      shape.ceilingRecessDepth = ceilingRecessDepth;
+      m_parameters.setCorridorShape(shape);
+    });
+  connect(
+    sideRecessHeightBox,
+    QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+    this,
+    [&](const auto sideRecessHeight) {
+      auto shape = m_parameters.corridorShape();
+      shape.sideRecessHeight = sideRecessHeight;
+      m_parameters.setCorridorShape(shape);
+    });
+  connect(
+    sideRecessDepthBox,
+    QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+    this,
+    [&](const auto sideRecessDepth) {
+      auto shape = m_parameters.corridorShape();
+      shape.sideRecessDepth = sideRecessDepth;
+      m_parameters.setCorridorShape(shape);
+    });
+
+  addWidget(controlsWidget);
+  addApplyButton(document);
+
+  m_notifierConnection += m_parameters.parametersDidChangeNotifier.connect([=, this]() {
+    const auto& shape = m_parameters.corridorShape();
+    const auto maxRecessDepth = std::max(0.0, shape.wallThickness - 1.0);
+
+    axisBox->setCurrentIndex(int(m_parameters.corridorAxis()));
+    wallThicknessBox->setValue(shape.wallThickness);
+    cornerRadiusBox->setValue(shape.cornerRadius);
+    cornerSegmentsBox->setValue(int(shape.cornerSegments));
+    ceilingRecessWidthBox->setValue(shape.ceilingRecessWidth);
+    ceilingRecessDepthBox->setMaximum(maxRecessDepth);
+    ceilingRecessDepthBox->setValue(shape.ceilingRecessDepth);
+    sideRecessHeightBox->setValue(shape.sideRecessHeight);
+    sideRecessDepthBox->setMaximum(maxRecessDepth);
+    sideRecessDepthBox->setValue(shape.sideRecessDepth);
+  });
 }
 
 std::vector<DrawShapeToolExtensionPage*> createDrawShapeToolExtensionPages(

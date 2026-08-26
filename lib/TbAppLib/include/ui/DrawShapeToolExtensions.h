@@ -107,6 +107,17 @@ public:
     const vm::bbox3d& bounds, const DrawShapeToolParameters& parameters) const override;
 };
 
+class DrawShapeToolCorridorExtension : public DrawShapeToolExtension
+{
+public:
+  explicit DrawShapeToolCorridorExtension(MapDocument& document);
+
+  const std::string& name() const override;
+  const std::filesystem::path& iconPath() const override;
+  Result<std::vector<mdl::Brush>> createBrushes(
+    const vm::bbox3d& bounds, const DrawShapeToolParameters& parameters) const override;
+};
+
 std::vector<std::unique_ptr<DrawShapeToolExtension>> createDrawShapeToolExtensions(
   MapDocument& document);
 

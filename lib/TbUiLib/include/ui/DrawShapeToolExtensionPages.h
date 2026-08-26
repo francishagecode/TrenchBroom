@@ -138,6 +138,20 @@ private:
   Q_OBJECT
 };
 
+class DrawShapeToolCorridorShapeExtensionPage : public DrawShapeToolExtensionPage
+{
+public:
+  explicit DrawShapeToolCorridorShapeExtensionPage(
+    MapDocument& document,
+    DrawShapeToolParameters& parameters,
+    QWidget* parent = nullptr);
+
+private:
+  DrawShapeToolParameters& m_parameters;
+
+  Q_OBJECT
+};
+
 std::vector<DrawShapeToolExtensionPage*> createDrawShapeToolExtensionPages(
   MapDocument& document, DrawShapeToolParameters& parameters, QWidget* parent = nullptr);
 
