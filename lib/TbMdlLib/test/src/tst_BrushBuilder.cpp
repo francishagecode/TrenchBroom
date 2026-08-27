@@ -920,6 +920,20 @@ TEST_CASE("BrushBuilder")
         | kdl::transform_error([](const auto& e) { FAIL(e); });
     }
 
+    SECTION("Default corridor-sized entrance")
+    {
+      const auto corridorSizedBounds = vm::bbox3d{{0, 0, 0}, {256, 256, 160}};
+      builder.createChamberShell(corridorSizedBounds, shape, vm::axis::x, "someName")
+        | kdl::transform([&](const auto& brushes) {
+            REQUIRE(!brushes.empty());
+            CHECK(getMergedBounds(brushes) == corridorSizedBounds);
+            CHECK(std::ranges::none_of(brushes, [](const auto& brush) {
+              return brush.containsPoint({8, 128, 80});
+            }));
+          })
+        | kdl::transform_error([](const auto& e) { FAIL(e); });
+    }
+
     SECTION("Closed shell")
     {
       auto closedShape = shape;
@@ -947,7 +961,7 @@ TEST_CASE("BrushBuilder")
         | kdl::transform_error([](const auto& e) { FAIL(e); });
     }
 
-    SECTION("Invalid or undersized settings")
+    SECTION("Invalid settings and constrained drag previews")
     {
       CHECK(
         builder.createChamberShell(bounds, shape, vm::axis::z, "someName").is_error());
@@ -962,10 +976,18 @@ TEST_CASE("BrushBuilder")
       CHECK(builder.createChamberShell(bounds, invalidShape, vm::axis::x, "someName")
               .is_error());
 
-      CHECK(
-        builder.createChamberShell(
-          vm::bbox3d{{-16, -16, 0}, {16, 16, 32}}, shape, vm::axis::x, "someName")
-        == Result<std::vector<Brush>>{std::vector<Brush>{}});
+      for (const auto& constrainedBounds : {
+             vm::bbox3d{{-16, -16, 0}, {16, 16, 32}},
+             vm::bbox3d{{-8, -8, 0}, {8, 8, 16}},
+           })
+      {
+        builder.createChamberShell(constrainedBounds, shape, vm::axis::x, "someName")
+          | kdl::transform([&](const auto& brushes) {
+              REQUIRE(!brushes.empty());
+              CHECK(getMergedBounds(brushes) == constrainedBounds);
+            })
+          | kdl::transform_error([](const auto& e) { FAIL(e); });
+      }
     }
   }
 

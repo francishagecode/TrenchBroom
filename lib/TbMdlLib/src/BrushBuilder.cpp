@@ -1173,6 +1173,27 @@ void appendUnique(std::vector<vm::vec2d>& points, const vm::vec2d& point)
   }
 }
 
+void removeCollinearPoints(std::vector<vm::vec2d>& points)
+{
+  auto removedPoint = true;
+  while (removedPoint && points.size() >= 3u)
+  {
+    removedPoint = false;
+    for (size_t i = 0u; i < points.size(); ++i)
+    {
+      const auto& previous = points[(i + points.size() - 1u) % points.size()];
+      const auto& current = points[i];
+      const auto& next = points[(i + 1u) % points.size()];
+      if (vm::is_colinear(previous, current, next))
+      {
+        points.erase(std::next(points.begin(), std::ptrdiff_t(i)));
+        removedPoint = true;
+        break;
+      }
+    }
+  }
+}
+
 void appendArc(
   std::vector<vm::vec2d>& points,
   const vm::vec2d& center,
@@ -1218,18 +1239,19 @@ std::vector<vm::vec2d> makeChamberFootprint(
     const auto cutForward = std::clamp(forwardCut, 0.0, forwardLength / 2.0);
     const auto entranceOuterWidth =
       shape.openEntrance ? shape.entranceWidth + 2.0 * shape.wallThickness : 0.0;
-    const auto maximumSpanCut = shape.openEntrance
-                                  ? std::max(0.0, (spanLength - entranceOuterWidth) / 2.0)
-                                  : spanLength / 2.0;
-    const auto cutSpan = std::clamp(spanCut, 0.0, maximumSpanCut);
+    const auto maximumEntranceSpanCut =
+      shape.openEntrance ? std::max(0.0, (spanLength - entranceOuterWidth) / 2.0)
+                         : spanLength / 2.0;
+    const auto entranceCutSpan = std::clamp(spanCut, 0.0, maximumEntranceSpanCut);
+    const auto farCutSpan = std::clamp(spanCut, 0.0, spanLength / 2.0);
     appendLocal(forwardMin + cutForward, spanMin);
     appendLocal(forwardMax - cutForward, spanMin);
-    appendLocal(forwardMax, spanMin + cutSpan);
-    appendLocal(forwardMax, spanMax - cutSpan);
+    appendLocal(forwardMax, spanMin + farCutSpan);
+    appendLocal(forwardMax, spanMax - farCutSpan);
     appendLocal(forwardMax - cutForward, spanMax);
     appendLocal(forwardMin + cutForward, spanMax);
-    appendLocal(forwardMin, spanMax - cutSpan);
-    appendLocal(forwardMin, spanMin + cutSpan);
+    appendLocal(forwardMin, spanMax - entranceCutSpan);
+    appendLocal(forwardMin, spanMin + entranceCutSpan);
     break;
   }
   case ChamberFootprint::Capsule: {
@@ -1319,6 +1341,7 @@ std::vector<vm::vec2d> makeChamberFootprint(
   {
     local.pop_back();
   }
+  removeCollinearPoints(local);
 
   auto result = local | std::views::transform([&](const auto& point) {
                   return chamberPoint(point.x(), point.y(), axis);
@@ -1510,27 +1533,51 @@ Result<std::vector<Brush>> BrushBuilder::createChamberShell(
   const auto width = bounds.size().x();
   const auto depth = bounds.size().y();
   const auto height = bounds.size().z();
-  const auto ceilingRise =
-    chamberShape.ceiling == ChamberCeiling::Flat ? 0.0 : chamberShape.ceilingRise;
-  if (
-    width <= 2.0 * chamberShape.wallThickness || depth <= 2.0 * chamberShape.wallThickness
-    || height <= 2.0 * chamberShape.wallThickness + ceilingRise)
+  if (width <= 0.0 || depth <= 0.0 || height <= 0.0)
   {
     return Result<std::vector<Brush>>{std::vector<Brush>{}};
   }
 
-  const auto outer = makeChamberFootprint(bounds.xy(), chamberShape, axis);
-  const auto inner = insetConvexPolygon(outer, chamberShape.wallThickness);
+  // During a drag, one or more dimensions begin at a single grid unit. Constrain the
+  // authored dimensions to the available bounds so that the user always gets a preview
+  // which grows into the requested shape instead of an invisible drag.
+  auto shape = chamberShape;
+  shape.wallThickness =
+    std::min(chamberShape.wallThickness, std::min({width, depth, height}) / 4.0);
+  const auto maximumCeilingRise = (height - 2.0 * shape.wallThickness) / 2.0;
+  shape.ceilingRise = shape.ceiling == ChamberCeiling::Flat
+                        ? 0.0
+                        : std::min(chamberShape.ceilingRise, maximumCeilingRise);
+  if (shape.openEntrance)
+  {
+    const auto spanLength = axis == vm::axis::x ? depth : width;
+    shape.entranceWidth =
+      std::min(chamberShape.entranceWidth, spanLength - 2.0 * shape.wallThickness);
+    shape.entranceHeight = std::min(
+      chamberShape.entranceHeight,
+      height - 2.0 * shape.wallThickness - shape.ceilingRise);
+  }
+
+  const auto ceilingRise = shape.ceilingRise;
+  if (
+    width <= 2.0 * shape.wallThickness || depth <= 2.0 * shape.wallThickness
+    || height <= 2.0 * shape.wallThickness + ceilingRise
+    || (shape.openEntrance && (shape.entranceWidth <= 0.0 || shape.entranceHeight <= 0.0)))
+  {
+    return Result<std::vector<Brush>>{std::vector<Brush>{}};
+  }
+
+  const auto outer = makeChamberFootprint(bounds.xy(), shape, axis);
+  const auto inner = insetConvexPolygon(outer, shape.wallThickness);
   if (outer.size() < 3u || !inner || inner->size() != outer.size())
   {
     return Result<std::vector<Brush>>{std::vector<Brush>{}};
   }
 
-  const auto floorTop = bounds.min.z() + chamberShape.wallThickness;
-  const auto ceilingSpring = bounds.max.z() - chamberShape.wallThickness - ceilingRise;
-  const auto wallTop = chamberShape.ceiling == ChamberCeiling::Flat
-                         ? ceilingSpring
-                         : bounds.max.z();
+  const auto floorTop = bounds.min.z() + shape.wallThickness;
+  const auto ceilingSpring = bounds.max.z() - shape.wallThickness - ceilingRise;
+  const auto wallTop =
+    shape.ceiling == ChamberCeiling::Flat ? ceilingSpring : bounds.max.z();
   if (ceilingSpring <= floorTop)
   {
     return Result<std::vector<Brush>>{std::vector<Brush>{}};
@@ -1541,7 +1588,7 @@ Result<std::vector<Brush>> BrushBuilder::createChamberShell(
     createBrush(chamberPrismVertices(outer, bounds.min.z(), floorTop), textureName));
 
   auto entranceEdge = std::optional<size_t>{};
-  if (chamberShape.openEntrance)
+  if (shape.openEntrance)
   {
     const auto forwardMin = axis == vm::axis::x ? bounds.min.x() : bounds.min.y();
     for (size_t i = 0u; i < outer.size(); ++i)
@@ -1576,8 +1623,8 @@ Result<std::vector<Brush>> BrushBuilder::createChamberShell(
 
     const auto spanCenter =
       axis == vm::axis::x ? bounds.xy().center().y() : bounds.xy().center().x();
-    const auto openingMin = spanCenter - chamberShape.entranceWidth / 2.0;
-    const auto openingMax = spanCenter + chamberShape.entranceWidth / 2.0;
+    const auto openingMin = spanCenter - shape.entranceWidth / 2.0;
+    const auto openingMax = spanCenter + shape.entranceWidth / 2.0;
     const auto interpolateAtSpan =
       [&](const vm::vec2d& start, const vm::vec2d& end, const double span) {
         const auto startSpan = chamberSpan(start, axis);
@@ -1618,7 +1665,7 @@ Result<std::vector<Brush>> BrushBuilder::createChamberShell(
         wallTop),
       textureName));
 
-    const auto openingTop = floorTop + chamberShape.entranceHeight;
+    const auto openingTop = floorTop + shape.entranceHeight;
     if (openingTop < wallTop)
     {
       brushes.push_back(createBrush(
@@ -1633,7 +1680,7 @@ Result<std::vector<Brush>> BrushBuilder::createChamberShell(
     }
   }
 
-  if (chamberShape.ceiling == ChamberCeiling::Flat)
+  if (shape.ceiling == ChamberCeiling::Flat)
   {
     brushes.push_back(createBrush(
       chamberPrismVertices(outer, ceilingSpring, bounds.max.z()), textureName));
@@ -1644,10 +1691,10 @@ Result<std::vector<Brush>> BrushBuilder::createChamberShell(
     const auto spanMax = axis == vm::axis::x ? bounds.max.y() : bounds.max.x();
     const auto spanCenter = (spanMin + spanMax) / 2.0;
     const auto halfSpan = (spanMax - spanMin) / 2.0;
-    const auto segmentCount = 2u * chamberShape.ceilingSegments;
+    const auto segmentCount = 2u * shape.ceilingSegments;
     const auto ceilingHeight = [&](const double span) {
       const auto normalized = std::clamp((span - spanCenter) / halfSpan, -1.0, 1.0);
-      const auto factor = chamberShape.ceiling == ChamberCeiling::BarrelVault
+      const auto factor = shape.ceiling == ChamberCeiling::BarrelVault
                             ? std::sqrt(std::max(0.0, 1.0 - normalized * normalized))
                             : 1.0 - std::abs(normalized);
       return ceilingSpring + ceilingRise * factor;

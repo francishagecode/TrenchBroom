@@ -596,6 +596,22 @@ TEST_CASE("DrawShapeToolChamberExtension")
       | kdl::transform_error([](const auto& e) { FAIL(e); });
   }
 
+  SECTION("One grid unit drag preview")
+  {
+    const auto dragBounds = vm::bbox3d{{0, 0, 0}, {16, 16, 16}};
+    extension.createBrushes(dragBounds, parameters)
+      | kdl::transform([&](const auto& brushes) {
+          REQUIRE(!brushes.empty());
+          CHECK(
+            kdl::fold_left_first(
+              brushes
+                | std::views::transform([](const auto& brush) { return brush.bounds(); }),
+              [](const auto& lhs, const auto& rhs) { return vm::merge(lhs, rhs); })
+            == dragBounds);
+        })
+      | kdl::transform_error([](const auto& e) { FAIL(e); });
+  }
+
   CHECK(extension.name() == "Chamber");
   CHECK(extension.iconPath() == "ShapeTool_Chamber.svg");
 }
