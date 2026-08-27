@@ -989,6 +989,54 @@ TEST_CASE("BrushBuilder")
           | kdl::transform_error([](const auto& e) { FAIL(e); });
       }
     }
+
+    SECTION("Grid-sized drag bounds")
+    {
+      const auto footprints = std::array{
+        ChamberFootprint::Chamfered,
+        ChamberFootprint::Octagonal,
+        ChamberFootprint::Capsule,
+        ChamberFootprint::Wedge,
+        ChamberFootprint::Apse,
+      };
+      const auto ceilings = std::array{
+        ChamberCeiling::Flat,
+        ChamberCeiling::BarrelVault,
+        ChamberCeiling::RaisedSpine,
+      };
+      const auto axes = std::array{vm::axis::x, vm::axis::y};
+      const auto dragSizes = std::array{
+        vm::vec3d{16, 16, 16},
+        vm::vec3d{64, 96, 48},
+        vm::vec3d{256, 256, 160},
+        vm::vec3d{512, 384, 320},
+      };
+
+      for (const auto footprint : footprints)
+      {
+        for (const auto ceiling : ceilings)
+        {
+          for (const auto axis : axes)
+          {
+            for (const auto& dragSize : dragSizes)
+            {
+              auto dragShape = shape;
+              dragShape.footprint = footprint;
+              dragShape.ceiling = ceiling;
+              const auto dragBounds = vm::bbox3d{{0, 0, 0}, dragSize};
+              CAPTURE(footprint, ceiling, axis, dragSize);
+
+              builder.createChamberShell(dragBounds, dragShape, axis, "someName")
+                | kdl::transform([&](const auto& brushes) {
+                    REQUIRE(!brushes.empty());
+                    CHECK(getMergedBounds(brushes) == dragBounds);
+                  })
+                | kdl::transform_error([](const auto& e) { FAIL(e); });
+            }
+          }
+        }
+      }
+    }
   }
 
   SECTION("createCuboid")

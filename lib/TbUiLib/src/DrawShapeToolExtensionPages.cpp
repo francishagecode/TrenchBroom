@@ -30,10 +30,13 @@
 #include <QStackedWidget>
 #include <QToolButton>
 
+#include "mdl/Grid.h"
+#include "mdl/Map.h"
 #include "ui/BitmapButton.h"
 #include "ui/DrawShapeToolExtension.h"
 #include "ui/DrawShapeToolExtensionKind.h"
 #include "ui/DrawShapeToolParameters.h"
+#include "ui/MapDocument.h"
 #include "ui/ViewConstants.h"
 
 #include "kd/ranges/to.h"
@@ -661,13 +664,15 @@ DrawShapeToolChamberExtensionPage::DrawShapeToolChamberExtensionPage(
 
   const auto makeDimensionBox = []() {
     auto* box = new QDoubleSpinBox{};
-    box->setRange(0.0, 4096.0);
-    box->setDecimals(0);
+    box->setRange(0.0, 65536.0);
+    box->setDecimals(3);
+    box->setAccelerated(true);
+    box->setToolTip(tr("Arrow-key and button increments follow the active map grid."));
     return box;
   };
 
   auto* wallBox = makeDimensionBox();
-  wallBox->setMinimum(1.0);
+  wallBox->setMinimum(0.001);
   auto* cornerBox = makeDimensionBox();
   auto* footprintSegmentsBox = new QSpinBox{};
   footprintSegmentsBox->setRange(1, 16);
@@ -680,9 +685,21 @@ DrawShapeToolChamberExtensionPage::DrawShapeToolChamberExtensionPage(
 
   auto* entranceBox = new QCheckBox{tr("Open entrance")};
   auto* entranceWidthBox = makeDimensionBox();
-  entranceWidthBox->setMinimum(1.0);
+  entranceWidthBox->setMinimum(0.001);
   auto* entranceHeightBox = makeDimensionBox();
-  entranceHeightBox->setMinimum(1.0);
+  entranceHeightBox->setMinimum(0.001);
+
+  const auto dimensionBoxes =
+    std::array{wallBox, cornerBox, ceilingRiseBox, entranceWidthBox, entranceHeightBox};
+  const auto updateGridIncrements = [=, &document]() {
+    const auto increment = document.map().grid().actualSize();
+    for (auto* box : dimensionBoxes)
+    {
+      box->setSingleStep(increment);
+    }
+  };
+  updateGridIncrements();
+  m_notifierConnection += document.gridDidChangeNotifier.connect(updateGridIncrements);
 
   const auto& initialShape = m_parameters.chamberShape();
   footprintBox->setCurrentIndex(int(initialShape.footprint));
