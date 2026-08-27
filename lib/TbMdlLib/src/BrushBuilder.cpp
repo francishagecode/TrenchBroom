@@ -846,21 +846,49 @@ std::optional<std::string> corridorShapeError(const CorridorShape& corridorShape
   return std::nullopt;
 }
 
-bool corridorShapeFits(
-  const CorridorShape& corridorShape,
-  const double width,
-  const double height,
-  const double radius)
+std::optional<CorridorShape> fitCorridorShapeToBounds(
+  const CorridorShape& corridorShape, const double width, const double height)
 {
-  const auto innerRadius = std::max(radius - corridorShape.wallThickness, 0.0);
-  const auto innerTopHalfWidth = width / 2.0 - corridorShape.wallThickness - innerRadius;
-  const auto innerSideHalfHeight =
-    height / 2.0 - corridorShape.wallThickness - innerRadius;
+  if (width <= 0.0 || height <= 0.0)
+  {
+    return std::nullopt;
+  }
 
-  return !(
-    (corridorShape.ceilingRecessDepth > 0.0
-     && corridorShape.ceilingRecessWidth >= 2.0 * innerTopHalfWidth)
-    || (corridorShape.sideRecessDepth > 0.0 && corridorShape.sideRecessHeight >= 2.0 * innerSideHalfHeight));
+  auto shape = corridorShape;
+  shape.wallThickness =
+    std::min(corridorShape.wallThickness, std::min(width, height) / 4.0);
+  shape.cornerRadius = std::min({corridorShape.cornerRadius, width / 2.0, height / 2.0});
+  if (shape.cornerRadius >= width / 2.0 && shape.cornerRadius >= height / 2.0)
+  {
+    // A radius that consumes both straight sides collapses the four rounded-rect
+    // corners onto one center point. Keep a small straight section so each shell
+    // fragment remains a complete convex brush during a square first-grid drag.
+    shape.cornerRadius =
+      std::max(0.0, std::min(width, height) / 2.0 - shape.wallThickness);
+  }
+
+  const auto innerRadius = std::max(shape.cornerRadius - shape.wallThickness, 0.0);
+  const auto innerTopHalfWidth = width / 2.0 - shape.wallThickness - innerRadius;
+  const auto innerSideHalfHeight = height / 2.0 - shape.wallThickness - innerRadius;
+  const auto fitRecessExtent = [&](const double requested, const double halfAvailable) {
+    const auto available = std::max(0.0, 2.0 * halfAvailable);
+    const auto margin = std::min(shape.wallThickness, available / 2.0);
+    return std::min(requested, available - margin);
+  };
+  const auto fitRecessDepth = [&](const double requested) {
+    return requested < shape.wallThickness ? requested : shape.wallThickness / 2.0;
+  };
+
+  shape.ceilingRecessWidth =
+    fitRecessExtent(corridorShape.ceilingRecessWidth, innerTopHalfWidth);
+  shape.ceilingRecessDepth = shape.ceilingRecessWidth > 0.0
+                               ? fitRecessDepth(corridorShape.ceilingRecessDepth)
+                               : 0.0;
+  shape.sideRecessHeight =
+    fitRecessExtent(corridorShape.sideRecessHeight, innerSideHalfHeight);
+  shape.sideRecessDepth =
+    shape.sideRecessHeight > 0.0 ? fitRecessDepth(corridorShape.sideRecessDepth) : 0.0;
+  return shape;
 }
 
 } // namespace
@@ -881,25 +909,24 @@ Result<std::vector<Brush>> BrushBuilder::createCorridor(
   const auto height = bounds.size()[axes.vertical];
   const auto depth = bounds.size()[axes.tunnel];
 
-  // The bounds pass through degenerate and undersized states while the user drags.
-  if (
-    width <= 2.0 * corridorShape.wallThickness
-    || height <= 2.0 * corridorShape.wallThickness || depth <= 0.0)
+  if (depth <= 0.0)
   {
     return Result<std::vector<Brush>>{std::vector<Brush>{}};
   }
 
-  const auto radius = std::min({corridorShape.cornerRadius, width / 2.0, height / 2.0});
-  if (!corridorShapeFits(corridorShape, width, height, radius))
+  const auto fittedShape = fitCorridorShapeToBounds(corridorShape, width, height);
+  if (!fittedShape)
   {
     return Result<std::vector<Brush>>{std::vector<Brush>{}};
   }
+  const auto& shape = *fittedShape;
+  const auto radius = shape.cornerRadius;
 
   const auto crossSectionBounds = vm::bbox2d{
     {bounds.min[axes.span], bounds.min[axes.vertical]},
     {bounds.max[axes.span], bounds.max[axes.vertical]},
   };
-  const auto boundary = makeCorridorBoundary(crossSectionBounds, corridorShape, radius);
+  const auto boundary = makeCorridorBoundary(crossSectionBounds, shape, radius);
 
   const auto toPoint = [&](const vm::vec2d& p, const double w) {
     auto result = vm::vec3d{};
@@ -957,24 +984,23 @@ Result<std::vector<Brush>> BrushBuilder::createCorridorBend(
   const auto width = bounds.size()[axes.span];
   const auto height = bounds.size()[axes.vertical];
   const auto depth = bounds.size()[axes.tunnel];
-  if (
-    width <= 2.0 * corridorShape.wallThickness
-    || height <= 2.0 * corridorShape.wallThickness || depth <= 0.0)
+  if (depth <= 0.0)
   {
     return Result<std::vector<Brush>>{std::vector<Brush>{}};
   }
 
-  const auto profileRadius =
-    std::min({corridorShape.cornerRadius, width / 2.0, height / 2.0});
-  if (!corridorShapeFits(corridorShape, width, height, profileRadius))
+  const auto fittedShape = fitCorridorShapeToBounds(corridorShape, width, height);
+  if (!fittedShape)
   {
     return Result<std::vector<Brush>>{std::vector<Brush>{}};
   }
+  const auto& shape = *fittedShape;
+  const auto profileRadius = shape.cornerRadius;
 
   const auto bendAngle =
     angle == CorridorBendAngle::Deg45 ? vm::Cd::quarter_pi() : vm::Cd::half_pi();
   const auto centerlineRadius = depth / std::sin(bendAngle) - width / 2.0;
-  if (centerlineRadius <= width / 2.0)
+  if (centerlineRadius < width / 2.0)
   {
     return Result<std::vector<Brush>>{std::vector<Brush>{}};
   }
@@ -983,8 +1009,7 @@ Result<std::vector<Brush>> BrushBuilder::createCorridorBend(
     {bounds.min[axes.span], bounds.min[axes.vertical]},
     {bounds.max[axes.span], bounds.max[axes.vertical]},
   };
-  const auto boundary =
-    makeCorridorBoundary(crossSectionBounds, corridorShape, profileRadius);
+  const auto boundary = makeCorridorBoundary(crossSectionBounds, shape, profileRadius);
   const auto spanCenter = crossSectionBounds.center().x();
   auto turnSign = direction == CorridorBendDirection::Left ? 1.0 : -1.0;
   if (axis == vm::axis::y)
@@ -1056,27 +1081,27 @@ Result<std::vector<Brush>> BrushBuilder::createCorridorTJunction(
   const auto height = bounds.size()[axes.vertical];
   const auto tunnelLength = bounds.size()[axes.tunnel];
   const auto crossbarLength = bounds.size()[axes.span];
-  if (
-    corridorWidth <= 2.0 * corridorShape.wallThickness
-    || height <= 2.0 * corridorShape.wallThickness || tunnelLength <= corridorWidth
-    || crossbarLength <= corridorWidth)
+  if (height <= 0.0 || tunnelLength <= 0.0 || crossbarLength <= 0.0)
   {
     return Result<std::vector<Brush>>{std::vector<Brush>{}};
   }
 
-  const auto profileRadius =
-    std::min({corridorShape.cornerRadius, corridorWidth / 2.0, height / 2.0});
-  if (!corridorShapeFits(corridorShape, corridorWidth, height, profileRadius))
+  const auto fittedWidth =
+    std::min(corridorWidth, std::min(tunnelLength, crossbarLength) / 2.0);
+  const auto fittedShape = fitCorridorShapeToBounds(corridorShape, fittedWidth, height);
+  if (!fittedShape)
   {
     return Result<std::vector<Brush>>{std::vector<Brush>{}};
   }
+  const auto& shape = *fittedShape;
+  const auto profileRadius = shape.cornerRadius;
 
   const auto tunnelMax = bounds.max[axes.tunnel];
   const auto spanMin = bounds.min[axes.span];
   const auto spanMax = bounds.max[axes.span];
   const auto spanCenter = (spanMin + spanMax) / 2.0;
-  const auto halfWidth = corridorWidth / 2.0;
-  const auto branchPlane = tunnelMax - corridorWidth;
+  const auto halfWidth = fittedWidth / 2.0;
+  const auto branchPlane = tunnelMax - fittedWidth;
   const auto crossbarAxis = vm::axis::type(axes.span);
 
   auto stemBounds = bounds;
@@ -1098,7 +1123,7 @@ Result<std::vector<Brush>> BrushBuilder::createCorridorTJunction(
   upperCrossbarBounds.min[axes.span] = spanCenter + halfWidth;
 
   auto centerResult =
-    createCorridor(centerCrossbarBounds, corridorShape, crossbarAxis, textureName)
+    createCorridor(centerCrossbarBounds, shape, crossbarAxis, textureName)
     | kdl::transform([&](auto brushes) {
         const auto branchSideLimit = branchPlane + profileRadius + vm::Cd::almost_zero();
         std::erase_if(brushes, [&](const auto& brush) {
@@ -1109,12 +1134,12 @@ Result<std::vector<Brush>> BrushBuilder::createCorridorTJunction(
 
   auto partResults = std::vector<Result<std::vector<Brush>>>{};
   partResults.reserve(4u);
-  partResults.push_back(createCorridor(stemBounds, corridorShape, axis, textureName));
+  partResults.push_back(createCorridor(stemBounds, shape, axis, textureName));
   partResults.push_back(
-    createCorridor(lowerCrossbarBounds, corridorShape, crossbarAxis, textureName));
+    createCorridor(lowerCrossbarBounds, shape, crossbarAxis, textureName));
   partResults.push_back(std::move(centerResult));
   partResults.push_back(
-    createCorridor(upperCrossbarBounds, corridorShape, crossbarAxis, textureName));
+    createCorridor(upperCrossbarBounds, shape, crossbarAxis, textureName));
 
   return partResults | kdl::fold | kdl::transform([](auto parts) {
            auto brushes = std::vector<Brush>{};

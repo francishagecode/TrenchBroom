@@ -157,12 +157,9 @@ const mdl::CorridorShape& DrawShapeToolParameters::corridorShape() const
 
 void DrawShapeToolParameters::setCorridorShape(mdl::CorridorShape corridorShape)
 {
-  const auto junctionWidth =
-    std::max(m_corridorJunctionWidth, 2.0 * corridorShape.wallThickness + 1.0);
-  if (corridorShape != m_corridorShape || junctionWidth != m_corridorJunctionWidth)
+  if (corridorShape != m_corridorShape)
   {
     m_corridorShape = std::move(corridorShape);
-    m_corridorJunctionWidth = junctionWidth;
     parametersDidChangeNotifier();
   }
 }
@@ -217,7 +214,7 @@ double DrawShapeToolParameters::corridorJunctionWidth() const
 
 void DrawShapeToolParameters::setCorridorJunctionWidth(const double width)
 {
-  const auto clampedWidth = std::max(width, 2.0 * m_corridorShape.wallThickness + 1.0);
+  const auto clampedWidth = std::max(width, 0.001);
   if (clampedWidth != m_corridorJunctionWidth)
   {
     m_corridorJunctionWidth = clampedWidth;

@@ -500,6 +500,22 @@ TEST_CASE("DrawShapeToolCorridorExtension")
       | kdl::transform_error([](const auto& e) { FAIL(e); });
   }
 
+  SECTION("One grid unit drag preview")
+  {
+    const auto dragBounds = vm::bbox3d{{0, 0, 0}, {16, 16, 16}};
+    extension.createBrushes(dragBounds, parameters)
+      | kdl::transform([&](const auto& brushes) {
+          REQUIRE(!brushes.empty());
+          CHECK(
+            kdl::fold_left_first(
+              brushes
+                | std::views::transform([](const auto& brush) { return brush.bounds(); }),
+              [](const auto& lhs, const auto& rhs) { return vm::merge(lhs, rhs); })
+            == dragBounds);
+        })
+      | kdl::transform_error([](const auto& e) { FAIL(e); });
+  }
+
   CHECK(extension.name() == "Corridor");
   CHECK(extension.iconPath() == "ShapeTool_Corridor.svg");
 }
@@ -528,6 +544,26 @@ TEST_CASE("DrawShapeToolCorridorBendExtension")
       | kdl::transform_error([](const auto& e) { FAIL(e); });
   }
 
+
+  SECTION("One grid unit drag previews")
+  {
+    const auto dragBounds = vm::bbox3d{{0, 0, 0}, {16, 16, 16}};
+    for (const auto angle :
+         {mdl::CorridorBendAngle::Deg45, mdl::CorridorBendAngle::Deg90})
+    {
+      CAPTURE(angle);
+      parameters.setCorridorBendAngle(angle);
+      extension.createBrushes(dragBounds, parameters)
+        | kdl::transform([&](const auto& brushes) {
+            REQUIRE(!brushes.empty());
+            CHECK(std::ranges::all_of(brushes, [](const auto& brush) {
+              return brush.fullySpecified();
+            }));
+          })
+        | kdl::transform_error([](const auto& e) { FAIL(e); });
+    }
+  }
+
   CHECK(extension.name() == "Corridor Bend");
   CHECK(extension.iconPath() == "ShapeTool_CorridorBend.svg");
 }
@@ -548,6 +584,22 @@ TEST_CASE("DrawShapeToolCorridorTJunctionExtension")
         [](const auto& lhs, const auto& rhs) { return vm::merge(lhs, rhs); })
       == bounds);
   }) | kdl::transform_error([](const auto& e) { FAIL(e); });
+
+  SECTION("One grid unit drag preview")
+  {
+    const auto dragBounds = vm::bbox3d{{0, 0, 0}, {16, 16, 16}};
+    extension.createBrushes(dragBounds, parameters)
+      | kdl::transform([&](const auto& brushes) {
+          REQUIRE(!brushes.empty());
+          CHECK(
+            kdl::fold_left_first(
+              brushes
+                | std::views::transform([](const auto& brush) { return brush.bounds(); }),
+              [](const auto& lhs, const auto& rhs) { return vm::merge(lhs, rhs); })
+            == dragBounds);
+        })
+      | kdl::transform_error([](const auto& e) { FAIL(e); });
+  }
 
   CHECK(extension.name() == "Corridor T");
   CHECK(extension.iconPath() == "ShapeTool_CorridorT.svg");
@@ -846,13 +898,13 @@ TEST_CASE("DrawShapeToolParameters")
     CHECK(parametersDidChange.notifications.size() == 4u);
 
     parameters.setCorridorJunctionWidth(1.0);
-    REQUIRE(parameters.corridorJunctionWidth() == 33.0);
+    REQUIRE(parameters.corridorJunctionWidth() == 1.0);
     CHECK(parametersDidChange.notifications.size() == 5u);
 
     auto thickShape = parameters.corridorShape();
     thickShape.wallThickness = 32.0;
     parameters.setCorridorShape(thickShape);
-    REQUIRE(parameters.corridorJunctionWidth() == 65.0);
+    REQUIRE(parameters.corridorJunctionWidth() == 1.0);
     CHECK(parametersDidChange.notifications.size() == 6u);
   }
 

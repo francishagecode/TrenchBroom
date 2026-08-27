@@ -414,7 +414,10 @@ DrawShapeToolArchShapeExtensionPage::DrawShapeToolArchShapeExtensionPage(
 }
 
 DrawShapeToolCorridorProfileExtensionPage::DrawShapeToolCorridorProfileExtensionPage(
-  DrawShapeToolParameters& parameters, const bool horizontalOnly, QWidget* parent)
+  MapDocument& document,
+  DrawShapeToolParameters& parameters,
+  const bool horizontalOnly,
+  QWidget* parent)
   : DrawShapeToolExtensionPage{parent}
   , m_parameters{parameters}
 {
@@ -430,21 +433,41 @@ DrawShapeToolCorridorProfileExtensionPage::DrawShapeToolCorridorProfileExtension
 
   const auto makeDimensionBox = []() {
     auto* box = new QDoubleSpinBox{};
-    box->setRange(0.0, 4096.0);
-    box->setDecimals(0);
+    box->setRange(0.0, 65536.0);
+    box->setDecimals(3);
+    box->setAccelerated(true);
+    box->setToolTip(tr("Arrow-key and button increments follow the active map grid."));
     return box;
   };
 
   auto* wallThicknessBox = makeDimensionBox();
-  wallThicknessBox->setMinimum(1.0);
+  wallThicknessBox->setMinimum(0.001);
   auto* cornerRadiusBox = makeDimensionBox();
-  cornerRadiusBox->setMinimum(1.0);
+  cornerRadiusBox->setMinimum(0.001);
   auto* cornerSegmentsBox = new QSpinBox{};
   cornerSegmentsBox->setRange(1, 16);
   auto* ceilingRecessWidthBox = makeDimensionBox();
   auto* ceilingRecessDepthBox = makeDimensionBox();
   auto* sideRecessHeightBox = makeDimensionBox();
   auto* sideRecessDepthBox = makeDimensionBox();
+
+  const auto dimensionBoxes = std::array{
+    wallThicknessBox,
+    cornerRadiusBox,
+    ceilingRecessWidthBox,
+    ceilingRecessDepthBox,
+    sideRecessHeightBox,
+    sideRecessDepthBox,
+  };
+  const auto updateGridIncrements = [=, &document]() {
+    const auto increment = document.map().grid().actualSize();
+    for (auto* box : dimensionBoxes)
+    {
+      box->setSingleStep(increment);
+    }
+  };
+  updateGridIncrements();
+  m_notifierConnection += document.gridDidChangeNotifier.connect(updateGridIncrements);
 
   auto* controlsLayout = new QGridLayout{};
   controlsLayout->setContentsMargins(QMargins{});
@@ -481,7 +504,7 @@ DrawShapeToolCorridorProfileExtensionPage::DrawShapeToolCorridorProfileExtension
     [&](const auto wallThickness) {
       auto shape = m_parameters.corridorShape();
       shape.wallThickness = wallThickness;
-      const auto maxRecessDepth = std::max(0.0, wallThickness - 1.0);
+      const auto maxRecessDepth = std::max(0.0, wallThickness - 0.001);
       shape.ceilingRecessDepth = std::min(shape.ceilingRecessDepth, maxRecessDepth);
       shape.sideRecessDepth = std::min(shape.sideRecessDepth, maxRecessDepth);
       m_parameters.setCorridorShape(shape);
@@ -545,7 +568,7 @@ DrawShapeToolCorridorProfileExtensionPage::DrawShapeToolCorridorProfileExtension
 
   m_notifierConnection += m_parameters.parametersDidChangeNotifier.connect([=, this]() {
     const auto& shape = m_parameters.corridorShape();
-    const auto maxRecessDepth = std::max(0.0, shape.wallThickness - 1.0);
+    const auto maxRecessDepth = std::max(0.0, shape.wallThickness - 0.001);
 
     axisBox->setCurrentIndex(int(m_parameters.corridorAxis()));
     wallThicknessBox->setValue(shape.wallThickness);
@@ -562,14 +585,14 @@ DrawShapeToolCorridorProfileExtensionPage::DrawShapeToolCorridorProfileExtension
 
 DrawShapeToolCorridorShapeExtensionPage::DrawShapeToolCorridorShapeExtensionPage(
   MapDocument& document, DrawShapeToolParameters& parameters, QWidget* parent)
-  : DrawShapeToolCorridorProfileExtensionPage{parameters, false, parent}
+  : DrawShapeToolCorridorProfileExtensionPage{document, parameters, false, parent}
 {
   addApplyButton(document);
 }
 
 DrawShapeToolCorridorBendExtensionPage::DrawShapeToolCorridorBendExtensionPage(
   MapDocument& document, DrawShapeToolParameters& parameters, QWidget* parent)
-  : DrawShapeToolCorridorProfileExtensionPage{parameters, true, parent}
+  : DrawShapeToolCorridorProfileExtensionPage{document, parameters, true, parent}
 {
   auto* angleLabel = new QLabel{tr("Bend:")};
   auto* angleBox = new QComboBox{};
@@ -625,13 +648,15 @@ DrawShapeToolCorridorBendExtensionPage::DrawShapeToolCorridorBendExtensionPage(
 
 DrawShapeToolCorridorTJunctionExtensionPage::DrawShapeToolCorridorTJunctionExtensionPage(
   MapDocument& document, DrawShapeToolParameters& parameters, QWidget* parent)
-  : DrawShapeToolCorridorProfileExtensionPage{parameters, true, parent}
+  : DrawShapeToolCorridorProfileExtensionPage{document, parameters, true, parent}
 {
   auto* widthLabel = new QLabel{tr("Corridor width:")};
   auto* widthBox = new QDoubleSpinBox{};
-  widthBox->setRange(1.0, 4096.0);
-  widthBox->setDecimals(0);
-  widthBox->setMinimum(2.0 * m_parameters.corridorShape().wallThickness + 1.0);
+  widthBox->setRange(0.001, 65536.0);
+  widthBox->setDecimals(3);
+  widthBox->setAccelerated(true);
+  widthBox->setSingleStep(document.map().grid().actualSize());
+  widthBox->setToolTip(tr("Arrow-key and button increments follow the active map grid."));
   widthBox->setValue(m_parameters.corridorJunctionWidth());
 
   connect(
@@ -644,10 +669,10 @@ DrawShapeToolCorridorTJunctionExtensionPage::DrawShapeToolCorridorTJunctionExten
   addWidget(widthBox);
   addApplyButton(document);
 
-  m_notifierConnection += m_parameters.parametersDidChangeNotifier.connect([=, this]() {
-    widthBox->setMinimum(2.0 * m_parameters.corridorShape().wallThickness + 1.0);
-    widthBox->setValue(m_parameters.corridorJunctionWidth());
-  });
+  m_notifierConnection += m_parameters.parametersDidChangeNotifier.connect(
+    [=, this]() { widthBox->setValue(m_parameters.corridorJunctionWidth()); });
+  m_notifierConnection += document.gridDidChangeNotifier.connect(
+    [=, &document]() { widthBox->setSingleStep(document.map().grid().actualSize()); });
 }
 
 DrawShapeToolChamberExtensionPage::DrawShapeToolChamberExtensionPage(

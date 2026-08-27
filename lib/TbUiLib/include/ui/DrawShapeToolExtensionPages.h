@@ -142,7 +142,10 @@ class DrawShapeToolCorridorProfileExtensionPage : public DrawShapeToolExtensionP
 {
 public:
   explicit DrawShapeToolCorridorProfileExtensionPage(
-    DrawShapeToolParameters& parameters, bool horizontalOnly, QWidget* parent = nullptr);
+    MapDocument& document,
+    DrawShapeToolParameters& parameters,
+    bool horizontalOnly,
+    QWidget* parent = nullptr);
 
 protected:
   DrawShapeToolParameters& m_parameters;

@@ -601,16 +601,20 @@ TEST_CASE("BrushBuilder")
         | kdl::transform_error([](const auto& e) { FAIL(e); });
     }
 
-    SECTION("Degenerate and undersized bounds do not error")
+    SECTION("Degenerate bounds and constrained preview")
     {
       CHECK(
         builder.createCorridor(
           vm::bbox3d{{0, -96, 0}, {0, 96, 128}}, basicShape, vm::axis::x, "someName")
         == Result<std::vector<Brush>>{std::vector<Brush>{}});
-      CHECK(
-        builder.createCorridor(
-          vm::bbox3d{{-128, -8, 0}, {128, 8, 128}}, basicShape, vm::axis::x, "someName")
-        == Result<std::vector<Brush>>{std::vector<Brush>{}});
+
+      const auto narrowBounds = vm::bbox3d{{-128, -8, 0}, {128, 8, 128}};
+      builder.createCorridor(narrowBounds, basicShape, vm::axis::x, "someName")
+        | kdl::transform([&](const auto& brushes) {
+            REQUIRE(!brushes.empty());
+            CHECK(getMergedBounds(brushes) == narrowBounds);
+          })
+        | kdl::transform_error([](const auto& e) { FAIL(e); });
     }
 
     SECTION("Invalid shape parameters error")
@@ -635,6 +639,31 @@ TEST_CASE("BrushBuilder")
       invalidShape.ceilingRecessDepth = 16.0;
       CHECK(
         builder.createCorridor(bounds, invalidShape, vm::axis::x, "someName").is_error());
+    }
+
+    SECTION("Grid-sized drag previews")
+    {
+      const auto recessedShape = CorridorShape{
+        .wallThickness = 16.0,
+        .cornerRadius = 32.0,
+        .cornerSegments = 2u,
+        .ceilingRecessWidth = 64.0,
+        .ceilingRecessDepth = 8.0,
+        .sideRecessHeight = 48.0,
+        .sideRecessDepth = 8.0,
+      };
+      const auto dragBounds = vm::bbox3d{{0, 0, 0}, {16, 16, 16}};
+
+      for (const auto axis : {vm::axis::x, vm::axis::y, vm::axis::z})
+      {
+        CAPTURE(axis);
+        builder.createCorridor(dragBounds, recessedShape, axis, "someName")
+          | kdl::transform([&](const auto& brushes) {
+              REQUIRE(!brushes.empty());
+              CHECK(getMergedBounds(brushes) == dragBounds);
+            })
+          | kdl::transform_error([](const auto& e) { FAIL(e); });
+      }
     }
   }
 
@@ -776,6 +805,36 @@ TEST_CASE("BrushBuilder")
           "someName")
         == Result<std::vector<Brush>>{std::vector<Brush>{}});
     }
+
+    SECTION("Grid-sized drag previews")
+    {
+      const auto recessedShape = CorridorShape{
+        .wallThickness = 16.0,
+        .cornerRadius = 32.0,
+        .cornerSegments = 2u,
+        .ceilingRecessWidth = 64.0,
+        .ceilingRecessDepth = 8.0,
+        .sideRecessHeight = 48.0,
+        .sideRecessDepth = 8.0,
+      };
+      const auto dragBounds = vm::bbox3d{{0, 0, 0}, {16, 16, 16}};
+
+      for (const auto axis : {vm::axis::x, vm::axis::y})
+      {
+        for (const auto angle : {CorridorBendAngle::Deg45, CorridorBendAngle::Deg90})
+        {
+          for (const auto direction :
+               {CorridorBendDirection::Left, CorridorBendDirection::Right})
+          {
+            CAPTURE(axis, angle, direction);
+            builder.createCorridorBend(
+              dragBounds, recessedShape, axis, angle, direction, 3u, "someName")
+              | kdl::transform([&](const auto& brushes) { REQUIRE(!brushes.empty()); })
+              | kdl::transform_error([](const auto& e) { FAIL(e); });
+          }
+        }
+      }
+    }
   }
 
   SECTION("createCorridorTJunction")
@@ -822,20 +881,35 @@ TEST_CASE("BrushBuilder")
         | kdl::transform_error([](const auto& e) { FAIL(e); });
     }
 
-    SECTION("Invalid or undersized junction settings")
+    SECTION("Invalid settings and constrained preview")
     {
       CHECK(builder.createCorridorTJunction(bounds, shape, vm::axis::z, 256.0, "someName")
               .is_error());
       CHECK(builder.createCorridorTJunction(bounds, shape, vm::axis::x, 0.0, "someName")
               .is_error());
-      CHECK(
-        builder.createCorridorTJunction(
-          vm::bbox3d{{-128, -128, 0}, {128, 128, 160}},
-          shape,
-          vm::axis::x,
-          256.0,
-          "someName")
-        == Result<std::vector<Brush>>{std::vector<Brush>{}});
+      const auto constrainedBounds = vm::bbox3d{{-128, -128, 0}, {128, 128, 160}};
+      builder.createCorridorTJunction(
+        constrainedBounds, shape, vm::axis::x, 256.0, "someName")
+        | kdl::transform([&](const auto& brushes) {
+            REQUIRE(!brushes.empty());
+            CHECK(getMergedBounds(brushes) == constrainedBounds);
+          })
+        | kdl::transform_error([](const auto& e) { FAIL(e); });
+    }
+
+    SECTION("Grid-sized drag previews")
+    {
+      for (const auto axis : {vm::axis::x, vm::axis::y})
+      {
+        const auto dragBounds = vm::bbox3d{{0, 0, 0}, {16, 16, 16}};
+        CAPTURE(axis);
+        builder.createCorridorTJunction(dragBounds, shape, axis, 256.0, "someName")
+          | kdl::transform([&](const auto& brushes) {
+              REQUIRE(!brushes.empty());
+              CHECK(getMergedBounds(brushes) == dragBounds);
+            })
+          | kdl::transform_error([](const auto& e) { FAIL(e); });
+      }
     }
   }
 
