@@ -189,6 +189,20 @@ private:
   Q_OBJECT
 };
 
+class DrawShapeToolChamberExtensionPage : public DrawShapeToolExtensionPage
+{
+public:
+  explicit DrawShapeToolChamberExtensionPage(
+    MapDocument& document,
+    DrawShapeToolParameters& parameters,
+    QWidget* parent = nullptr);
+
+private:
+  DrawShapeToolParameters& m_parameters;
+
+  Q_OBJECT
+};
+
 std::vector<DrawShapeToolExtensionPage*> createDrawShapeToolExtensionPages(
   MapDocument& document, DrawShapeToolParameters& parameters, QWidget* parent = nullptr);
 

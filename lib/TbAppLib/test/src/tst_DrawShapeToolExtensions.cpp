@@ -553,6 +553,53 @@ TEST_CASE("DrawShapeToolCorridorTJunctionExtension")
   CHECK(extension.iconPath() == "ShapeTool_CorridorT.svg");
 }
 
+TEST_CASE("DrawShapeToolChamberExtension")
+{
+  auto fixture = MapDocumentFixture{};
+  auto& document = fixture.create();
+  auto extension = DrawShapeToolChamberExtension{document};
+  auto parameters = DrawShapeToolParameters{};
+  const auto bounds = vm::bbox3d{{-384, -256, 0}, {384, 256, 256}};
+
+  SECTION("Default chamfered chamber")
+  {
+    extension.createBrushes(bounds, parameters)
+      | kdl::transform([&](const auto& brushes) {
+          CHECK(brushes.size() == 12u);
+          CHECK(
+            kdl::fold_left_first(
+              brushes
+                | std::views::transform([](const auto& brush) { return brush.bounds(); }),
+              [](const auto& lhs, const auto& rhs) { return vm::merge(lhs, rhs); })
+            == bounds);
+        })
+      | kdl::transform_error([](const auto& e) { FAIL(e); });
+  }
+
+  SECTION("Apse with barrel vault")
+  {
+    auto shape = parameters.chamberShape();
+    shape.footprint = mdl::ChamberFootprint::Apse;
+    shape.ceiling = mdl::ChamberCeiling::BarrelVault;
+    parameters.setChamberShape(shape);
+
+    extension.createBrushes(bounds, parameters)
+      | kdl::transform([&](const auto& brushes) {
+          CHECK(brushes.size() == 20u);
+          CHECK(
+            kdl::fold_left_first(
+              brushes
+                | std::views::transform([](const auto& brush) { return brush.bounds(); }),
+              [](const auto& lhs, const auto& rhs) { return vm::merge(lhs, rhs); })
+            == bounds);
+        })
+      | kdl::transform_error([](const auto& e) { FAIL(e); });
+  }
+
+  CHECK(extension.name() == "Chamber");
+  CHECK(extension.iconPath() == "ShapeTool_Chamber.svg");
+}
+
 TEST_CASE("DrawShapeToolParameters")
 {
   auto parameters = DrawShapeToolParameters{};
@@ -582,6 +629,21 @@ TEST_CASE("DrawShapeToolParameters")
     REQUIRE(parameters.corridorBendDirection() == mdl::CorridorBendDirection::Left);
     REQUIRE(parameters.corridorBendSegments() == 3u);
     REQUIRE(parameters.corridorJunctionWidth() == 256.0);
+    REQUIRE(parameters.chamberAxis() == vm::axis::x);
+    REQUIRE(
+      parameters.chamberShape()
+      == mdl::ChamberShape{
+        .footprint = mdl::ChamberFootprint::Chamfered,
+        .ceiling = mdl::ChamberCeiling::Flat,
+        .wallThickness = 16.0,
+        .cornerSize = 64.0,
+        .footprintSegments = 3u,
+        .ceilingRise = 64.0,
+        .ceilingSegments = 4u,
+        .openEntrance = true,
+        .entranceWidth = 224.0,
+        .entranceHeight = 128.0,
+      });
   }
 
   SECTION("Axis modifications")
@@ -776,6 +838,30 @@ TEST_CASE("DrawShapeToolParameters")
     parameters.setCorridorShape(thickShape);
     REQUIRE(parameters.corridorJunctionWidth() == 65.0);
     CHECK(parametersDidChange.notifications.size() == 6u);
+  }
+
+  SECTION("Chamber modifications")
+  {
+    auto parametersDidChange = Observer<>{parameters.parametersDidChangeNotifier};
+
+    parameters.setChamberAxis(vm::axis::x);
+    parameters.setChamberShape(parameters.chamberShape());
+    CHECK(parametersDidChange.notifications.empty());
+
+    parameters.setChamberAxis(vm::axis::y);
+    REQUIRE(parameters.chamberAxis() == vm::axis::y);
+    CHECK(parametersDidChange.notifications.size() == 1u);
+
+    auto shape = parameters.chamberShape();
+    shape.footprint = mdl::ChamberFootprint::Apse;
+    shape.ceiling = mdl::ChamberCeiling::BarrelVault;
+    shape.ceilingRise = 96.0;
+    parameters.setChamberShape(shape);
+    REQUIRE(parameters.chamberShape() == shape);
+    CHECK(parametersDidChange.notifications.size() == 2u);
+
+    parameters.setChamberShape(shape);
+    CHECK(parametersDidChange.notifications.size() == 2u);
   }
 
   SECTION("CircleShape modifications")

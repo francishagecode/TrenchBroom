@@ -72,6 +72,8 @@ std::unique_ptr<DrawShapeToolExtension> createExtension(
     return std::make_unique<DrawShapeToolCorridorBendExtension>(document);
   case DrawShapeToolExtensionKind::CorridorTJunction:
     return std::make_unique<DrawShapeToolCorridorTJunctionExtension>(document);
+  case DrawShapeToolExtensionKind::Chamber:
+    return std::make_unique<DrawShapeToolChamberExtension>(document);
   case DrawShapeToolExtensionKind::Cylinder:
     return std::make_unique<DrawShapeToolCylinderExtension>(document);
   case DrawShapeToolExtensionKind::Cone:
@@ -468,6 +470,41 @@ Result<std::vector<mdl::Brush>> DrawShapeToolCorridorTJunctionExtension::createB
     parameters.corridorShape(),
     parameters.corridorAxis(),
     parameters.corridorJunctionWidth(),
+    map.currentMaterialName());
+}
+
+DrawShapeToolChamberExtension::DrawShapeToolChamberExtension(MapDocument& document)
+  : DrawShapeToolExtension{document}
+{
+}
+
+const std::string& DrawShapeToolChamberExtension::name() const
+{
+  static const auto name = std::string{"Chamber"};
+  return name;
+}
+
+const std::filesystem::path& DrawShapeToolChamberExtension::iconPath() const
+{
+  static const auto path = std::filesystem::path{"ShapeTool_Chamber.svg"};
+  return path;
+}
+
+Result<std::vector<mdl::Brush>> DrawShapeToolChamberExtension::createBrushes(
+  const vm::bbox3d& bounds, const DrawShapeToolParameters& parameters) const
+{
+  auto& map = m_document.map();
+
+  const auto builder = mdl::BrushBuilder{
+    map.worldNode().mapFormat(),
+    map.worldBounds(),
+    map.gameInfo().gameConfig.faceAttribsConfig.defaultUvAttributes,
+    map.gameInfo().gameConfig.faceAttribsConfig.defaultSurfaceAttributes};
+
+  return builder.createChamberShell(
+    bounds,
+    parameters.chamberShape(),
+    parameters.chamberAxis(),
     map.currentMaterialName());
 }
 

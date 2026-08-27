@@ -62,6 +62,38 @@ enum class CorridorBendDirection
   Right,
 };
 
+enum class ChamberFootprint
+{
+  Chamfered,
+  Octagonal,
+  Capsule,
+  Wedge,
+  Apse,
+};
+
+enum class ChamberCeiling
+{
+  Flat,
+  BarrelVault,
+  RaisedSpine,
+};
+
+struct ChamberShape
+{
+  ChamberFootprint footprint;
+  ChamberCeiling ceiling;
+  double wallThickness;
+  double cornerSize;
+  size_t footprintSegments;
+  double ceilingRise;
+  size_t ceilingSegments;
+  bool openEntrance;
+  double entranceWidth;
+  double entranceHeight;
+
+  bool operator==(const ChamberShape&) const = default;
+};
+
 class BrushBuilder
 {
 private:
@@ -180,6 +212,17 @@ public:
     const CorridorShape& corridorShape,
     vm::axis::type axis,
     double corridorWidth,
+    const std::string& textureName) const;
+
+  /**
+   * Creates a room shell with a non-rectangular horizontal footprint. The shell has a
+   * floor slab, inset perimeter walls, and either a flat, barrel-vaulted, or raised-spine
+   * ceiling. `axis` points from the centered entrance toward the far end of the chamber.
+   */
+  Result<std::vector<Brush>> createChamberShell(
+    const vm::bbox3d& bounds,
+    const ChamberShape& chamberShape,
+    vm::axis::type axis,
     const std::string& textureName) const;
 
   Result<Brush> createCone(

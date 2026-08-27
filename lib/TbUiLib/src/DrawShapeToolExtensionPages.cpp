@@ -97,6 +97,8 @@ DrawShapeToolExtensionPage* createExtensionPage(
     return new DrawShapeToolCorridorBendExtensionPage{document, parameters, parent};
   case DrawShapeToolExtensionKind::CorridorTJunction:
     return new DrawShapeToolCorridorTJunctionExtensionPage{document, parameters, parent};
+  case DrawShapeToolExtensionKind::Chamber:
+    return new DrawShapeToolChamberExtensionPage{document, parameters, parent};
   case DrawShapeToolExtensionKind::Cylinder:
     return new DrawShapeToolCylinderShapeExtensionPage{document, parameters, parent};
   case DrawShapeToolExtensionKind::Cone:
@@ -642,6 +644,208 @@ DrawShapeToolCorridorTJunctionExtensionPage::DrawShapeToolCorridorTJunctionExten
   m_notifierConnection += m_parameters.parametersDidChangeNotifier.connect([=, this]() {
     widthBox->setMinimum(2.0 * m_parameters.corridorShape().wallThickness + 1.0);
     widthBox->setValue(m_parameters.corridorJunctionWidth());
+  });
+}
+
+DrawShapeToolChamberExtensionPage::DrawShapeToolChamberExtensionPage(
+  MapDocument& document, DrawShapeToolParameters& parameters, QWidget* parent)
+  : DrawShapeToolExtensionPage{parent}
+  , m_parameters{parameters}
+{
+  auto* footprintBox = new QComboBox{};
+  footprintBox->addItems(
+    {tr("Chamfered"), tr("Octagonal"), tr("Capsule"), tr("Wedge"), tr("Apse")});
+
+  auto* axisBox = new QComboBox{};
+  axisBox->addItems({tr("X"), tr("Y")});
+
+  const auto makeDimensionBox = []() {
+    auto* box = new QDoubleSpinBox{};
+    box->setRange(0.0, 4096.0);
+    box->setDecimals(0);
+    return box;
+  };
+
+  auto* wallBox = makeDimensionBox();
+  wallBox->setMinimum(1.0);
+  auto* cornerBox = makeDimensionBox();
+  auto* footprintSegmentsBox = new QSpinBox{};
+  footprintSegmentsBox->setRange(1, 16);
+
+  auto* ceilingBox = new QComboBox{};
+  ceilingBox->addItems({tr("Flat"), tr("Barrel vault"), tr("Raised spine")});
+  auto* ceilingRiseBox = makeDimensionBox();
+  auto* ceilingSegmentsBox = new QSpinBox{};
+  ceilingSegmentsBox->setRange(1, 16);
+
+  auto* entranceBox = new QCheckBox{tr("Open entrance")};
+  auto* entranceWidthBox = makeDimensionBox();
+  entranceWidthBox->setMinimum(1.0);
+  auto* entranceHeightBox = makeDimensionBox();
+  entranceHeightBox->setMinimum(1.0);
+
+  const auto& initialShape = m_parameters.chamberShape();
+  footprintBox->setCurrentIndex(int(initialShape.footprint));
+  axisBox->setCurrentIndex(int(m_parameters.chamberAxis()));
+  wallBox->setValue(initialShape.wallThickness);
+  cornerBox->setValue(initialShape.cornerSize);
+  footprintSegmentsBox->setValue(int(initialShape.footprintSegments));
+  ceilingBox->setCurrentIndex(int(initialShape.ceiling));
+  ceilingRiseBox->setValue(initialShape.ceilingRise);
+  ceilingSegmentsBox->setValue(int(initialShape.ceilingSegments));
+  entranceBox->setChecked(initialShape.openEntrance);
+  entranceWidthBox->setValue(initialShape.entranceWidth);
+  entranceHeightBox->setValue(initialShape.entranceHeight);
+
+  auto* controlsLayout = new QGridLayout{};
+  controlsLayout->setContentsMargins(QMargins{});
+  controlsLayout->setHorizontalSpacing(LayoutConstants::MediumHMargin);
+  controlsLayout->setVerticalSpacing(LayoutConstants::NarrowVMargin);
+  controlsLayout->addWidget(new QLabel{tr("Footprint:")}, 0, 0);
+  controlsLayout->addWidget(footprintBox, 0, 1);
+  controlsLayout->addWidget(new QLabel{tr("Axis:")}, 0, 2);
+  controlsLayout->addWidget(axisBox, 0, 3);
+  controlsLayout->addWidget(new QLabel{tr("Wall:")}, 0, 4);
+  controlsLayout->addWidget(wallBox, 0, 5);
+  controlsLayout->addWidget(new QLabel{tr("Corner:")}, 0, 6);
+  controlsLayout->addWidget(cornerBox, 0, 7);
+  controlsLayout->addWidget(new QLabel{tr("Curve steps:")}, 0, 8);
+  controlsLayout->addWidget(footprintSegmentsBox, 0, 9);
+  controlsLayout->addWidget(new QLabel{tr("Ceiling:")}, 1, 0);
+  controlsLayout->addWidget(ceilingBox, 1, 1);
+  controlsLayout->addWidget(new QLabel{tr("Rise:")}, 1, 2);
+  controlsLayout->addWidget(ceilingRiseBox, 1, 3);
+  controlsLayout->addWidget(new QLabel{tr("Steps / side:")}, 1, 4);
+  controlsLayout->addWidget(ceilingSegmentsBox, 1, 5);
+  controlsLayout->addWidget(entranceBox, 1, 6, 1, 2);
+  controlsLayout->addWidget(new QLabel{tr("Opening W/H:")}, 1, 8);
+  auto* entranceSizeLayout = new QHBoxLayout{};
+  entranceSizeLayout->setContentsMargins(QMargins{});
+  entranceSizeLayout->addWidget(entranceWidthBox);
+  entranceSizeLayout->addWidget(entranceHeightBox);
+  controlsLayout->addLayout(entranceSizeLayout, 1, 9);
+
+  auto* controlsWidget = new QWidget{};
+  controlsWidget->setLayout(controlsLayout);
+
+  connect(
+    footprintBox,
+    QOverload<int>::of(&QComboBox::currentIndexChanged),
+    this,
+    [&](const auto index) {
+      auto shape = m_parameters.chamberShape();
+      shape.footprint = mdl::ChamberFootprint(index);
+      m_parameters.setChamberShape(shape);
+    });
+  connect(
+    axisBox,
+    QOverload<int>::of(&QComboBox::currentIndexChanged),
+    this,
+    [&](const auto index) { m_parameters.setChamberAxis(vm::axis::type(index)); });
+  connect(
+    wallBox,
+    QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+    this,
+    [&](const auto value) {
+      auto shape = m_parameters.chamberShape();
+      shape.wallThickness = value;
+      m_parameters.setChamberShape(shape);
+    });
+  connect(
+    cornerBox,
+    QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+    this,
+    [&](const auto value) {
+      auto shape = m_parameters.chamberShape();
+      shape.cornerSize = value;
+      m_parameters.setChamberShape(shape);
+    });
+  connect(
+    footprintSegmentsBox,
+    QOverload<int>::of(&QSpinBox::valueChanged),
+    this,
+    [&](const auto value) {
+      auto shape = m_parameters.chamberShape();
+      shape.footprintSegments = size_t(value);
+      m_parameters.setChamberShape(shape);
+    });
+  connect(
+    ceilingBox,
+    QOverload<int>::of(&QComboBox::currentIndexChanged),
+    this,
+    [&](const auto index) {
+      auto shape = m_parameters.chamberShape();
+      shape.ceiling = mdl::ChamberCeiling(index);
+      m_parameters.setChamberShape(shape);
+    });
+  connect(
+    ceilingRiseBox,
+    QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+    this,
+    [&](const auto value) {
+      auto shape = m_parameters.chamberShape();
+      shape.ceilingRise = value;
+      m_parameters.setChamberShape(shape);
+    });
+  connect(
+    ceilingSegmentsBox,
+    QOverload<int>::of(&QSpinBox::valueChanged),
+    this,
+    [&](const auto value) {
+      auto shape = m_parameters.chamberShape();
+      shape.ceilingSegments = size_t(value);
+      m_parameters.setChamberShape(shape);
+    });
+  connect(entranceBox, &QCheckBox::toggled, this, [&](const auto checked) {
+    auto shape = m_parameters.chamberShape();
+    shape.openEntrance = checked;
+    m_parameters.setChamberShape(shape);
+  });
+  connect(
+    entranceWidthBox,
+    QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+    this,
+    [&](const auto value) {
+      auto shape = m_parameters.chamberShape();
+      shape.entranceWidth = value;
+      m_parameters.setChamberShape(shape);
+    });
+  connect(
+    entranceHeightBox,
+    QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+    this,
+    [&](const auto value) {
+      auto shape = m_parameters.chamberShape();
+      shape.entranceHeight = value;
+      m_parameters.setChamberShape(shape);
+    });
+
+  addWidget(controlsWidget);
+  addApplyButton(document);
+
+  m_notifierConnection += m_parameters.parametersDidChangeNotifier.connect([=, this]() {
+    const auto& shape = m_parameters.chamberShape();
+    footprintBox->setCurrentIndex(int(shape.footprint));
+    axisBox->setCurrentIndex(int(m_parameters.chamberAxis()));
+    wallBox->setValue(shape.wallThickness);
+    cornerBox->setValue(shape.cornerSize);
+    footprintSegmentsBox->setValue(int(shape.footprintSegments));
+    ceilingBox->setCurrentIndex(int(shape.ceiling));
+    ceilingRiseBox->setValue(shape.ceilingRise);
+    ceilingSegmentsBox->setValue(int(shape.ceilingSegments));
+    entranceBox->setChecked(shape.openEntrance);
+    entranceWidthBox->setValue(shape.entranceWidth);
+    entranceHeightBox->setValue(shape.entranceHeight);
+
+    cornerBox->setEnabled(shape.footprint == mdl::ChamberFootprint::Chamfered);
+    footprintSegmentsBox->setEnabled(
+      shape.footprint == mdl::ChamberFootprint::Capsule
+      || shape.footprint == mdl::ChamberFootprint::Apse);
+    const auto shapedCeiling = shape.ceiling != mdl::ChamberCeiling::Flat;
+    ceilingRiseBox->setEnabled(shapedCeiling);
+    ceilingSegmentsBox->setEnabled(shapedCeiling);
+    entranceWidthBox->setEnabled(shape.openEntrance);
+    entranceHeightBox->setEnabled(shape.openEntrance);
   });
 }
 

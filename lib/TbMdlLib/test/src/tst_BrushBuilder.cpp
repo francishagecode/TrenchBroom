@@ -839,6 +839,136 @@ TEST_CASE("BrushBuilder")
     }
   }
 
+  SECTION("createChamberShell")
+  {
+    auto builder = BrushBuilder{MapFormat::Standard, worldBounds};
+    const auto bounds = vm::bbox3d{{-384, -256, 0}, {384, 256, 256}};
+    const auto shape = ChamberShape{
+      .footprint = ChamberFootprint::Chamfered,
+      .ceiling = ChamberCeiling::Flat,
+      .wallThickness = 16.0,
+      .cornerSize = 64.0,
+      .footprintSegments = 3u,
+      .ceilingRise = 64.0,
+      .ceilingSegments = 4u,
+      .openEntrance = true,
+      .entranceWidth = 224.0,
+      .entranceHeight = 128.0,
+    };
+
+    SECTION("Non-square footprints")
+    {
+      const auto footprint = GENERATE(
+        ChamberFootprint::Chamfered,
+        ChamberFootprint::Octagonal,
+        ChamberFootprint::Capsule,
+        ChamberFootprint::Wedge,
+        ChamberFootprint::Apse);
+      CAPTURE(footprint);
+
+      auto footprintShape = shape;
+      footprintShape.footprint = footprint;
+      builder.createChamberShell(bounds, footprintShape, vm::axis::x, "someName")
+        | kdl::transform([&](const auto& brushes) {
+            REQUIRE(!brushes.empty());
+            CHECK(getMergedBounds(brushes) == bounds);
+            CHECK(std::ranges::none_of(brushes, [](const auto& brush) {
+              return brush.containsPoint({-376, 0, 80});
+            }));
+            CHECK(std::ranges::none_of(brushes, [](const auto& brush) {
+              return brush.containsPoint({0, 0, 80});
+            }));
+            CHECK(std::ranges::all_of(brushes, [](const auto& brush) {
+              return std::ranges::all_of(brush.faces(), [](const auto& face) {
+                return face.materialName() == "someName";
+              });
+            }));
+          })
+        | kdl::transform_error([](const auto& e) { FAIL(e); });
+    }
+
+    SECTION("Ceiling profiles")
+    {
+      const auto ceiling = GENERATE(
+        ChamberCeiling::Flat, ChamberCeiling::BarrelVault, ChamberCeiling::RaisedSpine);
+      CAPTURE(ceiling);
+
+      auto ceilingShape = shape;
+      ceilingShape.ceiling = ceiling;
+      builder.createChamberShell(bounds, ceilingShape, vm::axis::x, "someName")
+        | kdl::transform([&](const auto& brushes) {
+            REQUIRE(!brushes.empty());
+            CHECK(getMergedBounds(brushes) == bounds);
+            if (ceiling == ChamberCeiling::Flat)
+            {
+              CHECK(brushes.size() == 12u);
+            }
+            else
+            {
+              CHECK(brushes.size() == 19u);
+              CHECK(std::ranges::none_of(brushes, [](const auto& brush) {
+                return brush.containsPoint({0, 0, 230});
+              }));
+              CHECK(std::ranges::any_of(brushes, [](const auto& brush) {
+                return brush.containsPoint({0, 0, 248});
+              }));
+              CHECK(std::ranges::any_of(brushes, [](const auto& brush) {
+                return brush.containsPoint({376, 0, 230});
+              }));
+            }
+          })
+        | kdl::transform_error([](const auto& e) { FAIL(e); });
+    }
+
+    SECTION("Closed shell")
+    {
+      auto closedShape = shape;
+      closedShape.openEntrance = false;
+      builder.createChamberShell(bounds, closedShape, vm::axis::x, "someName")
+        | kdl::transform([&](const auto& brushes) {
+            CHECK(brushes.size() == 10u);
+            CHECK(std::ranges::any_of(brushes, [](const auto& brush) {
+              return brush.containsPoint({-376, 0, 80});
+            }));
+          })
+        | kdl::transform_error([](const auto& e) { FAIL(e); });
+    }
+
+    SECTION("Y axis")
+    {
+      builder.createChamberShell(bounds, shape, vm::axis::y, "someName")
+        | kdl::transform([&](const auto& brushes) {
+            REQUIRE(!brushes.empty());
+            CHECK(getMergedBounds(brushes) == bounds);
+            CHECK(std::ranges::none_of(brushes, [](const auto& brush) {
+              return brush.containsPoint({0, -248, 80});
+            }));
+          })
+        | kdl::transform_error([](const auto& e) { FAIL(e); });
+    }
+
+    SECTION("Invalid or undersized settings")
+    {
+      CHECK(
+        builder.createChamberShell(bounds, shape, vm::axis::z, "someName").is_error());
+
+      auto invalidShape = shape;
+      invalidShape.wallThickness = 0.0;
+      CHECK(builder.createChamberShell(bounds, invalidShape, vm::axis::x, "someName")
+              .is_error());
+
+      invalidShape = shape;
+      invalidShape.footprintSegments = 0u;
+      CHECK(builder.createChamberShell(bounds, invalidShape, vm::axis::x, "someName")
+              .is_error());
+
+      CHECK(
+        builder.createChamberShell(
+          vm::bbox3d{{-16, -16, 0}, {16, 16, 32}}, shape, vm::axis::x, "someName")
+        == Result<std::vector<Brush>>{std::vector<Brush>{}});
+    }
+  }
+
   SECTION("createCuboid")
   {
     auto builder = BrushBuilder{MapFormat::Standard, worldBounds};

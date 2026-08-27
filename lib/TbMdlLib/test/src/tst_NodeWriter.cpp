@@ -445,7 +445,7 @@ TEST_CASE("NodeWriter")
     CHECK(actual == expected);
   }
 
-  SECTION("writeValveCorridorShapes")
+  SECTION("writeValveArchitecturalShapes")
   {
     const auto worldBounds = vm::bbox3d{8192.0};
     auto worldNode = WorldNode{{}, {}, MapFormat::Valve};
@@ -502,13 +502,31 @@ TEST_CASE("NodeWriter")
         256.0,
         "AquilariusRetroTextures/t13")
       | kdl::value());
+    addBrushes(
+      builder.createChamberShell(
+        {{1200, -384, 0}, {1968, 384, 320}},
+        ChamberShape{
+          .footprint = ChamberFootprint::Apse,
+          .ceiling = ChamberCeiling::BarrelVault,
+          .wallThickness = 16.0,
+          .cornerSize = 64.0,
+          .footprintSegments = 3u,
+          .ceilingRise = 64.0,
+          .ceilingSegments = 4u,
+          .openEntrance = true,
+          .entranceWidth = 224.0,
+          .entranceHeight = 128.0,
+        },
+        vm::axis::x,
+        "AquilariusRetroTextures/t13")
+      | kdl::value());
 
     auto str = std::stringstream{};
     auto writer = NodeWriter{worldNode, str};
     writer.writeMap(taskManager);
 
     const auto actual = str.str();
-    CHECK(actual.find("// brush 326") != std::string::npos);
+    CHECK(actual.find("// brush 346") != std::string::npos);
     CHECK(actual.find("AquilariusRetroTextures/t13 [ ") != std::string::npos);
   }
 

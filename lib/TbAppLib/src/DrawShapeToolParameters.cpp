@@ -225,4 +225,32 @@ void DrawShapeToolParameters::setCorridorJunctionWidth(const double width)
   }
 }
 
+vm::axis::type DrawShapeToolParameters::chamberAxis() const
+{
+  return m_chamberAxis;
+}
+
+void DrawShapeToolParameters::setChamberAxis(const vm::axis::type axis)
+{
+  if (axis != m_chamberAxis)
+  {
+    m_chamberAxis = axis;
+    parametersDidChangeNotifier();
+  }
+}
+
+const mdl::ChamberShape& DrawShapeToolParameters::chamberShape() const
+{
+  return m_chamberShape;
+}
+
+void DrawShapeToolParameters::setChamberShape(mdl::ChamberShape chamberShape)
+{
+  if (chamberShape != m_chamberShape)
+  {
+    m_chamberShape = std::move(chamberShape);
+    parametersDidChangeNotifier();
+  }
+}
+
 } // namespace tb::ui

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <path
+    fill="#ff7f01"
+    fill-opacity="0.247059"
+    stroke="#ff8000"
+    stroke-linejoin="round"
+    fill-rule="evenodd"
+    d="M7 2h10l5 5v10l-5 5H7l-5-5V7Zm1.7 4L6 8.7v6.6L8.7 18H10v-4h4v4h1.3l2.7-2.7V8.7L15.3 6Z"/>
+</svg>

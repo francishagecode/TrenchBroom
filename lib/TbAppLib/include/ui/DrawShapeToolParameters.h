@@ -73,6 +73,21 @@ private:
   size_t m_corridorBendSegments = 3u;
   double m_corridorJunctionWidth = 256.0;
 
+  // For chamber shells
+  vm::axis::type m_chamberAxis = vm::axis::x;
+  mdl::ChamberShape m_chamberShape{
+    .footprint = mdl::ChamberFootprint::Chamfered,
+    .ceiling = mdl::ChamberCeiling::Flat,
+    .wallThickness = 16.0,
+    .cornerSize = 64.0,
+    .footprintSegments = 3u,
+    .ceilingRise = 64.0,
+    .ceilingSegments = 4u,
+    .openEntrance = true,
+    .entranceWidth = 224.0,
+    .entranceHeight = 128.0,
+  };
+
 public:
   Notifier<> parametersDidChangeNotifier;
 
@@ -117,6 +132,12 @@ public:
 
   double corridorJunctionWidth() const;
   void setCorridorJunctionWidth(double width);
+
+  vm::axis::type chamberAxis() const;
+  void setChamberAxis(vm::axis::type axis);
+
+  const mdl::ChamberShape& chamberShape() const;
+  void setChamberShape(mdl::ChamberShape chamberShape);
 };
 
 } // namespace tb::ui
