@@ -97,6 +97,19 @@ std::optional<vm::vec3d> Lasso::project(
 void Lasso::render(
   render::RenderContext& renderContext, render::RenderBatch& renderBatch) const
 {
+  render(
+    renderContext,
+    renderBatch,
+    RgbaF{1.0f, 1.0f, 1.0f, 1.0f},
+    RgbaF{1.0f, 1.0f, 1.0f, 0.25f});
+}
+
+void Lasso::render(
+  render::RenderContext& renderContext,
+  render::RenderBatch& renderBatch,
+  const RgbaF& outlineColor,
+  const RgbaF& fillColor) const
+{
   const auto transform = getTransform();
   const auto inverseTransform = vm::invert(transform);
 
@@ -109,11 +122,11 @@ void Lasso::render(
   };
 
   auto renderService = render::RenderService{renderContext, renderBatch};
-  renderService.setForegroundColor(RgbaF{1.0f, 1.0f, 1.0f, 1.0f});
+  renderService.setForegroundColor(outlineColor);
   renderService.setLineWidth(2.0f);
   renderService.renderPolygonOutline(polygon);
 
-  renderService.setForegroundColor(RgbaF{1.0f, 1.0f, 1.0f, 0.25f});
+  renderService.setForegroundColor(fillColor);
   renderService.renderFilledPolygon(polygon);
 }
 

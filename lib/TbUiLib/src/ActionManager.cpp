@@ -1420,6 +1420,23 @@ void ActionManager::createToolsMenu()
 {
   auto& toolsMenu = createMainMenu("Tools");
   toolsMenu.addItem(addAction(Action{
+    "Menu/Edit/Tools/Box Select Tool",
+    "Box Select Tool",
+    ActionContext::View2D | ActionContext::AnyOrNoSelection
+      | ActionContext::AnyOrNoTool,
+    KeySequence{"Q"},
+    [](auto& context) { context.mapWindow().toolBox().toggleBoxSelectionTool(); },
+    [](const auto& context) {
+      return context.hasDocument()
+             && context.mapWindow().toolBox().canToggleBoxSelectionTool();
+    },
+    [](const auto& context) {
+      return context.hasDocument()
+             && context.mapWindow().toolBox().boxSelectionToolActive();
+    },
+    std::filesystem::path{"BoxSelectTool.svg"},
+  }));
+  toolsMenu.addItem(addAction(Action{
     "Menu/Edit/Tools/Brush Tool",
     "Brush Tool",
     ActionContext::Any,
@@ -2061,6 +2078,7 @@ Menu& ActionManager::createMainMenu(std::string name)
 void ActionManager::createToolbar()
 {
   m_toolBar.addItem(existingAction("Controls/Map view/Deactivate current tool"));
+  m_toolBar.addItem(existingAction("Menu/Edit/Tools/Box Select Tool"));
   m_toolBar.addItem(existingAction("Menu/Edit/Tools/Brush Tool"));
   m_toolBar.addItem(existingAction("Menu/Edit/Tools/Clip Tool"));
   m_toolBar.addItem(existingAction("Menu/Edit/Tools/Vertex Tool"));

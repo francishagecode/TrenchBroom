@@ -66,6 +66,14 @@ std::unique_ptr<DrawShapeToolExtension> createExtension(
     return std::make_unique<DrawShapeToolStairsExtension>(document);
   case DrawShapeToolExtensionKind::Arch:
     return std::make_unique<DrawShapeToolArchExtension>(document);
+  case DrawShapeToolExtensionKind::Corridor:
+    return std::make_unique<DrawShapeToolCorridorExtension>(document);
+  case DrawShapeToolExtensionKind::CorridorBend:
+    return std::make_unique<DrawShapeToolCorridorBendExtension>(document);
+  case DrawShapeToolExtensionKind::CorridorTJunction:
+    return std::make_unique<DrawShapeToolCorridorTJunctionExtension>(document);
+  case DrawShapeToolExtensionKind::Chamber:
+    return std::make_unique<DrawShapeToolChamberExtension>(document);
   case DrawShapeToolExtensionKind::Cylinder:
     return std::make_unique<DrawShapeToolCylinderExtension>(document);
   case DrawShapeToolExtensionKind::Cone:
@@ -351,6 +359,152 @@ Result<std::vector<mdl::Brush>> DrawShapeToolArchExtension::createBrushes(
     parameters.thickness(),
     parameters.circleShape(),
     parameters.axis(),
+    map.currentMaterialName());
+}
+
+DrawShapeToolCorridorExtension::DrawShapeToolCorridorExtension(MapDocument& document)
+  : DrawShapeToolExtension{document}
+{
+}
+
+const std::string& DrawShapeToolCorridorExtension::name() const
+{
+  static const auto name = std::string{"Corridor"};
+  return name;
+}
+
+const std::filesystem::path& DrawShapeToolCorridorExtension::iconPath() const
+{
+  static const auto path = std::filesystem::path{"ShapeTool_Corridor.svg"};
+  return path;
+}
+
+Result<std::vector<mdl::Brush>> DrawShapeToolCorridorExtension::createBrushes(
+  const vm::bbox3d& bounds, const DrawShapeToolParameters& parameters) const
+{
+  auto& map = m_document.map();
+
+  const auto builder = mdl::BrushBuilder{
+    map.worldNode().mapFormat(),
+    map.worldBounds(),
+    map.gameInfo().gameConfig.faceAttribsConfig.defaultUvAttributes,
+    map.gameInfo().gameConfig.faceAttribsConfig.defaultSurfaceAttributes};
+
+  return builder.createCorridor(
+    bounds,
+    parameters.corridorShape(),
+    parameters.corridorAxis(),
+    map.currentMaterialName());
+}
+
+DrawShapeToolCorridorBendExtension::DrawShapeToolCorridorBendExtension(
+  MapDocument& document)
+  : DrawShapeToolExtension{document}
+{
+}
+
+const std::string& DrawShapeToolCorridorBendExtension::name() const
+{
+  static const auto name = std::string{"Corridor Bend"};
+  return name;
+}
+
+const std::filesystem::path& DrawShapeToolCorridorBendExtension::iconPath() const
+{
+  static const auto path = std::filesystem::path{"ShapeTool_CorridorBend.svg"};
+  return path;
+}
+
+Result<std::vector<mdl::Brush>> DrawShapeToolCorridorBendExtension::createBrushes(
+  const vm::bbox3d& bounds, const DrawShapeToolParameters& parameters) const
+{
+  auto& map = m_document.map();
+
+  const auto builder = mdl::BrushBuilder{
+    map.worldNode().mapFormat(),
+    map.worldBounds(),
+    map.gameInfo().gameConfig.faceAttribsConfig.defaultUvAttributes,
+    map.gameInfo().gameConfig.faceAttribsConfig.defaultSurfaceAttributes};
+
+  return builder.createCorridorBend(
+    bounds,
+    parameters.corridorShape(),
+    parameters.corridorAxis(),
+    parameters.corridorBendAngle(),
+    parameters.corridorBendDirection(),
+    parameters.corridorBendSegments(),
+    map.currentMaterialName());
+}
+
+DrawShapeToolCorridorTJunctionExtension::DrawShapeToolCorridorTJunctionExtension(
+  MapDocument& document)
+  : DrawShapeToolExtension{document}
+{
+}
+
+const std::string& DrawShapeToolCorridorTJunctionExtension::name() const
+{
+  static const auto name = std::string{"Corridor T"};
+  return name;
+}
+
+const std::filesystem::path& DrawShapeToolCorridorTJunctionExtension::iconPath() const
+{
+  static const auto path = std::filesystem::path{"ShapeTool_CorridorT.svg"};
+  return path;
+}
+
+Result<std::vector<mdl::Brush>> DrawShapeToolCorridorTJunctionExtension::createBrushes(
+  const vm::bbox3d& bounds, const DrawShapeToolParameters& parameters) const
+{
+  auto& map = m_document.map();
+
+  const auto builder = mdl::BrushBuilder{
+    map.worldNode().mapFormat(),
+    map.worldBounds(),
+    map.gameInfo().gameConfig.faceAttribsConfig.defaultUvAttributes,
+    map.gameInfo().gameConfig.faceAttribsConfig.defaultSurfaceAttributes};
+
+  return builder.createCorridorTJunction(
+    bounds,
+    parameters.corridorShape(),
+    parameters.corridorAxis(),
+    parameters.corridorJunctionWidth(),
+    map.currentMaterialName());
+}
+
+DrawShapeToolChamberExtension::DrawShapeToolChamberExtension(MapDocument& document)
+  : DrawShapeToolExtension{document}
+{
+}
+
+const std::string& DrawShapeToolChamberExtension::name() const
+{
+  static const auto name = std::string{"Chamber"};
+  return name;
+}
+
+const std::filesystem::path& DrawShapeToolChamberExtension::iconPath() const
+{
+  static const auto path = std::filesystem::path{"ShapeTool_Chamber.svg"};
+  return path;
+}
+
+Result<std::vector<mdl::Brush>> DrawShapeToolChamberExtension::createBrushes(
+  const vm::bbox3d& bounds, const DrawShapeToolParameters& parameters) const
+{
+  auto& map = m_document.map();
+
+  const auto builder = mdl::BrushBuilder{
+    map.worldNode().mapFormat(),
+    map.worldBounds(),
+    map.gameInfo().gameConfig.faceAttribsConfig.defaultUvAttributes,
+    map.gameInfo().gameConfig.faceAttribsConfig.defaultSurfaceAttributes};
+
+  return builder.createChamberShell(
+    bounds,
+    parameters.chamberShape(),
+    parameters.chamberAxis(),
     map.currentMaterialName());
 }
 

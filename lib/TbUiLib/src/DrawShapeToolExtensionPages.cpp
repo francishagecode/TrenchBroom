@@ -24,15 +24,19 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDoubleSpinBox>
+#include <QGridLayout>
 #include <QLabel>
 #include <QSpinBox>
 #include <QStackedWidget>
 #include <QToolButton>
 
+#include "mdl/Grid.h"
+#include "mdl/Map.h"
 #include "ui/BitmapButton.h"
 #include "ui/DrawShapeToolExtension.h"
 #include "ui/DrawShapeToolExtensionKind.h"
 #include "ui/DrawShapeToolParameters.h"
+#include "ui/MapDocument.h"
 #include "ui/ViewConstants.h"
 
 #include "kd/ranges/to.h"
@@ -90,6 +94,14 @@ DrawShapeToolExtensionPage* createExtensionPage(
     return new DrawShapeToolStairsExtensionPage{document, parameters, parent};
   case DrawShapeToolExtensionKind::Arch:
     return new DrawShapeToolArchShapeExtensionPage{document, parameters, parent};
+  case DrawShapeToolExtensionKind::Corridor:
+    return new DrawShapeToolCorridorShapeExtensionPage{document, parameters, parent};
+  case DrawShapeToolExtensionKind::CorridorBend:
+    return new DrawShapeToolCorridorBendExtensionPage{document, parameters, parent};
+  case DrawShapeToolExtensionKind::CorridorTJunction:
+    return new DrawShapeToolCorridorTJunctionExtensionPage{document, parameters, parent};
+  case DrawShapeToolExtensionKind::Chamber:
+    return new DrawShapeToolChamberExtensionPage{document, parameters, parent};
   case DrawShapeToolExtensionKind::Cylinder:
     return new DrawShapeToolCylinderShapeExtensionPage{document, parameters, parent};
   case DrawShapeToolExtensionKind::Cone:
@@ -399,6 +411,484 @@ DrawShapeToolArchShapeExtensionPage::DrawShapeToolArchShapeExtensionPage(
 
   m_notifierConnection += m_parameters.parametersDidChangeNotifier.connect(
     [=, this]() { thicknessBox->setValue(m_parameters.thickness()); });
+}
+
+DrawShapeToolCorridorProfileExtensionPage::DrawShapeToolCorridorProfileExtensionPage(
+  MapDocument& document,
+  DrawShapeToolParameters& parameters,
+  const bool horizontalOnly,
+  QWidget* parent)
+  : DrawShapeToolExtensionPage{parent}
+  , m_parameters{parameters}
+{
+  if (horizontalOnly && m_parameters.corridorAxis() == vm::axis::z)
+  {
+    m_parameters.setCorridorAxis(vm::axis::x);
+  }
+
+  auto* axisBox = new QComboBox{};
+  axisBox->addItems(
+    horizontalOnly ? QStringList{tr("X"), tr("Y")}
+                   : QStringList{tr("X"), tr("Y"), tr("Z")});
+
+  const auto makeDimensionBox = []() {
+    auto* box = new QDoubleSpinBox{};
+    box->setRange(0.0, 65536.0);
+    box->setDecimals(3);
+    box->setAccelerated(true);
+    box->setToolTip(tr("Arrow-key and button increments follow the active map grid."));
+    return box;
+  };
+
+  auto* wallThicknessBox = makeDimensionBox();
+  wallThicknessBox->setMinimum(0.001);
+  auto* cornerRadiusBox = makeDimensionBox();
+  cornerRadiusBox->setMinimum(0.001);
+  auto* cornerSegmentsBox = new QSpinBox{};
+  cornerSegmentsBox->setRange(1, 16);
+  auto* ceilingRecessWidthBox = makeDimensionBox();
+  auto* ceilingRecessDepthBox = makeDimensionBox();
+  auto* sideRecessHeightBox = makeDimensionBox();
+  auto* sideRecessDepthBox = makeDimensionBox();
+
+  const auto dimensionBoxes = std::array{
+    wallThicknessBox,
+    cornerRadiusBox,
+    ceilingRecessWidthBox,
+    ceilingRecessDepthBox,
+    sideRecessHeightBox,
+    sideRecessDepthBox,
+  };
+  const auto updateGridIncrements = [=, &document]() {
+    const auto increment = document.map().grid().actualSize();
+    for (auto* box : dimensionBoxes)
+    {
+      box->setSingleStep(increment);
+    }
+  };
+  updateGridIncrements();
+  m_notifierConnection += document.gridDidChangeNotifier.connect(updateGridIncrements);
+
+  auto* controlsLayout = new QGridLayout{};
+  controlsLayout->setContentsMargins(QMargins{});
+  controlsLayout->setHorizontalSpacing(LayoutConstants::MediumHMargin);
+  controlsLayout->setVerticalSpacing(LayoutConstants::NarrowVMargin);
+
+  controlsLayout->addWidget(new QLabel{tr("Axis:")}, 0, 0);
+  controlsLayout->addWidget(axisBox, 0, 1);
+  controlsLayout->addWidget(new QLabel{tr("Wall:")}, 0, 2);
+  controlsLayout->addWidget(wallThicknessBox, 0, 3);
+  controlsLayout->addWidget(new QLabel{tr("Radius:")}, 0, 4);
+  controlsLayout->addWidget(cornerRadiusBox, 0, 5);
+  controlsLayout->addWidget(new QLabel{tr("Corner steps:")}, 0, 6);
+  controlsLayout->addWidget(cornerSegmentsBox, 0, 7);
+  controlsLayout->addWidget(new QLabel{tr("Ceiling width/depth:")}, 1, 0, 1, 2);
+  controlsLayout->addWidget(ceilingRecessWidthBox, 1, 2);
+  controlsLayout->addWidget(ceilingRecessDepthBox, 1, 3);
+  controlsLayout->addWidget(new QLabel{tr("Side height/depth:")}, 1, 4, 1, 2);
+  controlsLayout->addWidget(sideRecessHeightBox, 1, 6);
+  controlsLayout->addWidget(sideRecessDepthBox, 1, 7);
+
+  auto* controlsWidget = new QWidget{};
+  controlsWidget->setLayout(controlsLayout);
+
+  connect(
+    axisBox,
+    QOverload<int>::of(&QComboBox::currentIndexChanged),
+    this,
+    [&](const auto index) { m_parameters.setCorridorAxis(vm::axis::type(index)); });
+  connect(
+    wallThicknessBox,
+    QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+    this,
+    [&](const auto wallThickness) {
+      auto shape = m_parameters.corridorShape();
+      shape.wallThickness = wallThickness;
+      const auto maxRecessDepth = std::max(0.0, wallThickness - 0.001);
+      shape.ceilingRecessDepth = std::min(shape.ceilingRecessDepth, maxRecessDepth);
+      shape.sideRecessDepth = std::min(shape.sideRecessDepth, maxRecessDepth);
+      m_parameters.setCorridorShape(shape);
+    });
+  connect(
+    cornerRadiusBox,
+    QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+    this,
+    [&](const auto cornerRadius) {
+      auto shape = m_parameters.corridorShape();
+      shape.cornerRadius = cornerRadius;
+      m_parameters.setCorridorShape(shape);
+    });
+  connect(
+    cornerSegmentsBox,
+    QOverload<int>::of(&QSpinBox::valueChanged),
+    this,
+    [&](const auto cornerSegments) {
+      auto shape = m_parameters.corridorShape();
+      shape.cornerSegments = size_t(cornerSegments);
+      m_parameters.setCorridorShape(shape);
+    });
+  connect(
+    ceilingRecessWidthBox,
+    QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+    this,
+    [&](const auto ceilingRecessWidth) {
+      auto shape = m_parameters.corridorShape();
+      shape.ceilingRecessWidth = ceilingRecessWidth;
+      m_parameters.setCorridorShape(shape);
+    });
+  connect(
+    ceilingRecessDepthBox,
+    QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+    this,
+    [&](const auto ceilingRecessDepth) {
+      auto shape = m_parameters.corridorShape();
+      shape.ceilingRecessDepth = ceilingRecessDepth;
+      m_parameters.setCorridorShape(shape);
+    });
+  connect(
+    sideRecessHeightBox,
+    QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+    this,
+    [&](const auto sideRecessHeight) {
+      auto shape = m_parameters.corridorShape();
+      shape.sideRecessHeight = sideRecessHeight;
+      m_parameters.setCorridorShape(shape);
+    });
+  connect(
+    sideRecessDepthBox,
+    QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+    this,
+    [&](const auto sideRecessDepth) {
+      auto shape = m_parameters.corridorShape();
+      shape.sideRecessDepth = sideRecessDepth;
+      m_parameters.setCorridorShape(shape);
+    });
+
+  addWidget(controlsWidget);
+
+  m_notifierConnection += m_parameters.parametersDidChangeNotifier.connect([=, this]() {
+    const auto& shape = m_parameters.corridorShape();
+    const auto maxRecessDepth = std::max(0.0, shape.wallThickness - 0.001);
+
+    axisBox->setCurrentIndex(int(m_parameters.corridorAxis()));
+    wallThicknessBox->setValue(shape.wallThickness);
+    cornerRadiusBox->setValue(shape.cornerRadius);
+    cornerSegmentsBox->setValue(int(shape.cornerSegments));
+    ceilingRecessWidthBox->setValue(shape.ceilingRecessWidth);
+    ceilingRecessDepthBox->setMaximum(maxRecessDepth);
+    ceilingRecessDepthBox->setValue(shape.ceilingRecessDepth);
+    sideRecessHeightBox->setValue(shape.sideRecessHeight);
+    sideRecessDepthBox->setMaximum(maxRecessDepth);
+    sideRecessDepthBox->setValue(shape.sideRecessDepth);
+  });
+}
+
+DrawShapeToolCorridorShapeExtensionPage::DrawShapeToolCorridorShapeExtensionPage(
+  MapDocument& document, DrawShapeToolParameters& parameters, QWidget* parent)
+  : DrawShapeToolCorridorProfileExtensionPage{document, parameters, false, parent}
+{
+  addApplyButton(document);
+}
+
+DrawShapeToolCorridorBendExtensionPage::DrawShapeToolCorridorBendExtensionPage(
+  MapDocument& document, DrawShapeToolParameters& parameters, QWidget* parent)
+  : DrawShapeToolCorridorProfileExtensionPage{document, parameters, true, parent}
+{
+  auto* angleLabel = new QLabel{tr("Bend:")};
+  auto* angleBox = new QComboBox{};
+  angleBox->addItems({tr("45°"), tr("90°")});
+
+  auto* directionLabel = new QLabel{tr("Turn:")};
+  auto* directionBox = new QComboBox{};
+  directionBox->addItems({tr("Left"), tr("Right")});
+
+  auto* segmentsLabel = new QLabel{tr("Steps / 45°:")};
+  auto* segmentsBox = new QSpinBox{};
+  segmentsBox->setRange(1, 16);
+
+  connect(
+    angleBox,
+    QOverload<int>::of(&QComboBox::currentIndexChanged),
+    this,
+    [&](const auto index) {
+      m_parameters.setCorridorBendAngle(
+        index == 0 ? mdl::CorridorBendAngle::Deg45 : mdl::CorridorBendAngle::Deg90);
+    });
+  connect(
+    directionBox,
+    QOverload<int>::of(&QComboBox::currentIndexChanged),
+    this,
+    [&](const auto index) {
+      m_parameters.setCorridorBendDirection(
+        index == 0 ? mdl::CorridorBendDirection::Left
+                   : mdl::CorridorBendDirection::Right);
+    });
+  connect(
+    segmentsBox,
+    QOverload<int>::of(&QSpinBox::valueChanged),
+    this,
+    [&](const auto segments) { m_parameters.setCorridorBendSegments(size_t(segments)); });
+
+  addWidget(angleLabel);
+  addWidget(angleBox);
+  addWidget(directionLabel);
+  addWidget(directionBox);
+  addWidget(segmentsLabel);
+  addWidget(segmentsBox);
+  addApplyButton(document);
+
+  m_notifierConnection += m_parameters.parametersDidChangeNotifier.connect([=, this]() {
+    angleBox->setCurrentIndex(
+      m_parameters.corridorBendAngle() == mdl::CorridorBendAngle::Deg45 ? 0 : 1);
+    directionBox->setCurrentIndex(
+      m_parameters.corridorBendDirection() == mdl::CorridorBendDirection::Left ? 0 : 1);
+    segmentsBox->setValue(int(m_parameters.corridorBendSegments()));
+  });
+}
+
+DrawShapeToolCorridorTJunctionExtensionPage::DrawShapeToolCorridorTJunctionExtensionPage(
+  MapDocument& document, DrawShapeToolParameters& parameters, QWidget* parent)
+  : DrawShapeToolCorridorProfileExtensionPage{document, parameters, true, parent}
+{
+  auto* widthLabel = new QLabel{tr("Corridor width:")};
+  auto* widthBox = new QDoubleSpinBox{};
+  widthBox->setRange(0.001, 65536.0);
+  widthBox->setDecimals(3);
+  widthBox->setAccelerated(true);
+  widthBox->setSingleStep(document.map().grid().actualSize());
+  widthBox->setToolTip(tr("Arrow-key and button increments follow the active map grid."));
+  widthBox->setValue(m_parameters.corridorJunctionWidth());
+
+  connect(
+    widthBox,
+    QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+    this,
+    [&](const auto width) { m_parameters.setCorridorJunctionWidth(width); });
+
+  addWidget(widthLabel);
+  addWidget(widthBox);
+  addApplyButton(document);
+
+  m_notifierConnection += m_parameters.parametersDidChangeNotifier.connect(
+    [=, this]() { widthBox->setValue(m_parameters.corridorJunctionWidth()); });
+  m_notifierConnection += document.gridDidChangeNotifier.connect(
+    [=, &document]() { widthBox->setSingleStep(document.map().grid().actualSize()); });
+}
+
+DrawShapeToolChamberExtensionPage::DrawShapeToolChamberExtensionPage(
+  MapDocument& document, DrawShapeToolParameters& parameters, QWidget* parent)
+  : DrawShapeToolExtensionPage{parent}
+  , m_parameters{parameters}
+{
+  auto* footprintBox = new QComboBox{};
+  footprintBox->addItems(
+    {tr("Chamfered"), tr("Octagonal"), tr("Capsule"), tr("Wedge"), tr("Apse")});
+
+  auto* axisBox = new QComboBox{};
+  axisBox->addItems({tr("X"), tr("Y")});
+
+  const auto makeDimensionBox = []() {
+    auto* box = new QDoubleSpinBox{};
+    box->setRange(0.0, 65536.0);
+    box->setDecimals(3);
+    box->setAccelerated(true);
+    box->setToolTip(tr("Arrow-key and button increments follow the active map grid."));
+    return box;
+  };
+
+  auto* wallBox = makeDimensionBox();
+  wallBox->setMinimum(0.001);
+  auto* cornerBox = makeDimensionBox();
+  auto* footprintSegmentsBox = new QSpinBox{};
+  footprintSegmentsBox->setRange(1, 16);
+
+  auto* ceilingBox = new QComboBox{};
+  ceilingBox->addItems({tr("Flat"), tr("Barrel vault"), tr("Raised spine")});
+  auto* ceilingRiseBox = makeDimensionBox();
+  auto* ceilingSegmentsBox = new QSpinBox{};
+  ceilingSegmentsBox->setRange(1, 16);
+
+  auto* entranceBox = new QCheckBox{tr("Open entrance")};
+  auto* entranceWidthBox = makeDimensionBox();
+  entranceWidthBox->setMinimum(0.001);
+  auto* entranceHeightBox = makeDimensionBox();
+  entranceHeightBox->setMinimum(0.001);
+
+  const auto dimensionBoxes =
+    std::array{wallBox, cornerBox, ceilingRiseBox, entranceWidthBox, entranceHeightBox};
+  const auto updateGridIncrements = [=, &document]() {
+    const auto increment = document.map().grid().actualSize();
+    for (auto* box : dimensionBoxes)
+    {
+      box->setSingleStep(increment);
+    }
+  };
+  updateGridIncrements();
+  m_notifierConnection += document.gridDidChangeNotifier.connect(updateGridIncrements);
+
+  const auto& initialShape = m_parameters.chamberShape();
+  footprintBox->setCurrentIndex(int(initialShape.footprint));
+  axisBox->setCurrentIndex(int(m_parameters.chamberAxis()));
+  wallBox->setValue(initialShape.wallThickness);
+  cornerBox->setValue(initialShape.cornerSize);
+  footprintSegmentsBox->setValue(int(initialShape.footprintSegments));
+  ceilingBox->setCurrentIndex(int(initialShape.ceiling));
+  ceilingRiseBox->setValue(initialShape.ceilingRise);
+  ceilingSegmentsBox->setValue(int(initialShape.ceilingSegments));
+  entranceBox->setChecked(initialShape.openEntrance);
+  entranceWidthBox->setValue(initialShape.entranceWidth);
+  entranceHeightBox->setValue(initialShape.entranceHeight);
+
+  auto* controlsLayout = new QGridLayout{};
+  controlsLayout->setContentsMargins(QMargins{});
+  controlsLayout->setHorizontalSpacing(LayoutConstants::MediumHMargin);
+  controlsLayout->setVerticalSpacing(LayoutConstants::NarrowVMargin);
+  controlsLayout->addWidget(new QLabel{tr("Footprint:")}, 0, 0);
+  controlsLayout->addWidget(footprintBox, 0, 1);
+  controlsLayout->addWidget(new QLabel{tr("Axis:")}, 0, 2);
+  controlsLayout->addWidget(axisBox, 0, 3);
+  controlsLayout->addWidget(new QLabel{tr("Wall:")}, 0, 4);
+  controlsLayout->addWidget(wallBox, 0, 5);
+  controlsLayout->addWidget(new QLabel{tr("Corner:")}, 0, 6);
+  controlsLayout->addWidget(cornerBox, 0, 7);
+  controlsLayout->addWidget(new QLabel{tr("Curve steps:")}, 0, 8);
+  controlsLayout->addWidget(footprintSegmentsBox, 0, 9);
+  controlsLayout->addWidget(new QLabel{tr("Ceiling:")}, 1, 0);
+  controlsLayout->addWidget(ceilingBox, 1, 1);
+  controlsLayout->addWidget(new QLabel{tr("Rise:")}, 1, 2);
+  controlsLayout->addWidget(ceilingRiseBox, 1, 3);
+  controlsLayout->addWidget(new QLabel{tr("Steps / side:")}, 1, 4);
+  controlsLayout->addWidget(ceilingSegmentsBox, 1, 5);
+  controlsLayout->addWidget(entranceBox, 1, 6, 1, 2);
+  controlsLayout->addWidget(new QLabel{tr("Opening W/H:")}, 1, 8);
+  auto* entranceSizeLayout = new QHBoxLayout{};
+  entranceSizeLayout->setContentsMargins(QMargins{});
+  entranceSizeLayout->addWidget(entranceWidthBox);
+  entranceSizeLayout->addWidget(entranceHeightBox);
+  controlsLayout->addLayout(entranceSizeLayout, 1, 9);
+
+  auto* controlsWidget = new QWidget{};
+  controlsWidget->setLayout(controlsLayout);
+
+  connect(
+    footprintBox,
+    QOverload<int>::of(&QComboBox::currentIndexChanged),
+    this,
+    [&](const auto index) {
+      auto shape = m_parameters.chamberShape();
+      shape.footprint = mdl::ChamberFootprint(index);
+      m_parameters.setChamberShape(shape);
+    });
+  connect(
+    axisBox,
+    QOverload<int>::of(&QComboBox::currentIndexChanged),
+    this,
+    [&](const auto index) { m_parameters.setChamberAxis(vm::axis::type(index)); });
+  connect(
+    wallBox,
+    QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+    this,
+    [&](const auto value) {
+      auto shape = m_parameters.chamberShape();
+      shape.wallThickness = value;
+      m_parameters.setChamberShape(shape);
+    });
+  connect(
+    cornerBox,
+    QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+    this,
+    [&](const auto value) {
+      auto shape = m_parameters.chamberShape();
+      shape.cornerSize = value;
+      m_parameters.setChamberShape(shape);
+    });
+  connect(
+    footprintSegmentsBox,
+    QOverload<int>::of(&QSpinBox::valueChanged),
+    this,
+    [&](const auto value) {
+      auto shape = m_parameters.chamberShape();
+      shape.footprintSegments = size_t(value);
+      m_parameters.setChamberShape(shape);
+    });
+  connect(
+    ceilingBox,
+    QOverload<int>::of(&QComboBox::currentIndexChanged),
+    this,
+    [&](const auto index) {
+      auto shape = m_parameters.chamberShape();
+      shape.ceiling = mdl::ChamberCeiling(index);
+      m_parameters.setChamberShape(shape);
+    });
+  connect(
+    ceilingRiseBox,
+    QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+    this,
+    [&](const auto value) {
+      auto shape = m_parameters.chamberShape();
+      shape.ceilingRise = value;
+      m_parameters.setChamberShape(shape);
+    });
+  connect(
+    ceilingSegmentsBox,
+    QOverload<int>::of(&QSpinBox::valueChanged),
+    this,
+    [&](const auto value) {
+      auto shape = m_parameters.chamberShape();
+      shape.ceilingSegments = size_t(value);
+      m_parameters.setChamberShape(shape);
+    });
+  connect(entranceBox, &QCheckBox::toggled, this, [&](const auto checked) {
+    auto shape = m_parameters.chamberShape();
+    shape.openEntrance = checked;
+    m_parameters.setChamberShape(shape);
+  });
+  connect(
+    entranceWidthBox,
+    QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+    this,
+    [&](const auto value) {
+      auto shape = m_parameters.chamberShape();
+      shape.entranceWidth = value;
+      m_parameters.setChamberShape(shape);
+    });
+  connect(
+    entranceHeightBox,
+    QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+    this,
+    [&](const auto value) {
+      auto shape = m_parameters.chamberShape();
+      shape.entranceHeight = value;
+      m_parameters.setChamberShape(shape);
+    });
+
+  addWidget(controlsWidget);
+  addApplyButton(document);
+
+  m_notifierConnection += m_parameters.parametersDidChangeNotifier.connect([=, this]() {
+    const auto& shape = m_parameters.chamberShape();
+    footprintBox->setCurrentIndex(int(shape.footprint));
+    axisBox->setCurrentIndex(int(m_parameters.chamberAxis()));
+    wallBox->setValue(shape.wallThickness);
+    cornerBox->setValue(shape.cornerSize);
+    footprintSegmentsBox->setValue(int(shape.footprintSegments));
+    ceilingBox->setCurrentIndex(int(shape.ceiling));
+    ceilingRiseBox->setValue(shape.ceilingRise);
+    ceilingSegmentsBox->setValue(int(shape.ceilingSegments));
+    entranceBox->setChecked(shape.openEntrance);
+    entranceWidthBox->setValue(shape.entranceWidth);
+    entranceHeightBox->setValue(shape.entranceHeight);
+
+    cornerBox->setEnabled(shape.footprint == mdl::ChamberFootprint::Chamfered);
+    footprintSegmentsBox->setEnabled(
+      shape.footprint == mdl::ChamberFootprint::Capsule
+      || shape.footprint == mdl::ChamberFootprint::Apse);
+    const auto shapedCeiling = shape.ceiling != mdl::ChamberCeiling::Flat;
+    ceilingRiseBox->setEnabled(shapedCeiling);
+    ceilingSegmentsBox->setEnabled(shapedCeiling);
+    entranceWidthBox->setEnabled(shape.openEntrance);
+    entranceHeightBox->setEnabled(shape.openEntrance);
+  });
 }
 
 std::vector<DrawShapeToolExtensionPage*> createDrawShapeToolExtensionPages(

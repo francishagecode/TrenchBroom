@@ -38,6 +38,7 @@
 #include "render/RenderContext.h"
 #include "render/SelectionBoundsRenderer.h"
 #include "ui/AnimationManager.h"
+#include "ui/BoxSelectionToolController2D.h"
 #include "ui/CameraAnimation.h"
 #include "ui/CameraLinkHelper.h"
 #include "ui/CameraTool2D.h"
@@ -127,6 +128,8 @@ void MapView2D::initializeCamera(const ViewPlane viewPlane)
 void MapView2D::initializeToolChain(MapViewToolBox& toolBox)
 {
   addToolController(std::make_unique<CameraTool2D>(*m_camera));
+  addToolController(
+    std::make_unique<BoxSelectionToolController2D>(toolBox.boxSelectionTool()));
   addToolController(
     std::make_unique<MoveObjectsToolController>(toolBox.moveObjectsTool()));
   addToolController(std::make_unique<RotateToolController2D>(toolBox.rotateTool()));

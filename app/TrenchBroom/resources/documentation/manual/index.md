@@ -248,6 +248,8 @@ In the 3D viewport, you can only select the frontmost object with the mouse. To 
 
 In a 2D viewport, you can also left click an object to select it. But unlike in the 3D viewport, this will not necessarily select the frontmost object. Instead, TrenchBroom will analyze the objects under the mouse, specifically the faces under the mouse, and it will find the one with the smallest visible area. Having found such a face, it will select the object to which this face belongs. Since entities don't necessarily have faces, the faces of their bounding boxes will be considered instead. The advantage of this technique is that it allows you to easily select occluded objects in the 2D viewports.
 
+For larger areas in a 2D viewport, activate #menu(Menu/Edit/Tools/Box Select Tool) and drag a rectangle. Drag from left to right to select only objects completely enclosed by the rectangle, or from right to left to also select objects that cross its boundary. The rectangle extends through the full depth of the map, so objects are selected regardless of their distance from the viewport. With no modifier, the result replaces the current selection. Hold #key(Ctrl) to add objects or #key(Alt) to remove them. Hidden and locked objects are excluded.
+
 You may also think of left click selection like this: In both the 3D viewport or a 2D viewport, TrenchBroom first compiles a set of candidate objects. These are all objects under the mouse. Then, it must choose an object to be selected from these candidates. In the 3D viewport, the frontmost object always wins (unless you're using the scroll wheel to drill the selection), and in a 2D view, the object with the smallest visible area wins. Other than that, selection behaves exactly the same in both viewports, that is, you can hold #key(Ctrl) to select multiple objects and so on.
 
 Sometimes, selecting objects manually is too tedious. To select all currently editable objects, you can choose #menu(Menu/Edit/Select All) from the menu. Note that hidden and locked objects are excluded, so this command is particularly useful in conjunction with those features. Another option to select multiple objects at once is to use _selection brushes_. Just create one or more new brushes that enclose or touch all the objects you wish to select. These brushes are called selection brushes. Select all of these newly created selection brushes, and choose #menu(Menu/Edit/Select Touching) to select every object touched by the selection brushes, or choose #menu(Menu/Edit/Select Inside) to select every object enclosed inside them. Note that selection brushes will disappear after they were made use of.
@@ -326,6 +328,7 @@ Tool                  Viewports    Type          Purpose
 ----                  ---------    ----          -----------
 Camera Tool           2D, 3D       Permanent     Adjusting the 3D camera and the 2D viewports
 Selection Tool        2D, 3D       Permanent     Selecting objects and brush faces
+Box Select Tool       2D           Modal         Selecting objects in a dragged rectangular area
 Simple Shape Tool     2D, 3D       Permanent*    Creating simple shapes
 Complex Shape Tool    3D           Modal         Creating arbitrarily shaped brushes
 Entity Drag Tool      2D, 3D       Permanent     Creating entities by drag and drop
@@ -342,6 +345,7 @@ Tools of the type Permanent* are deactivated whenever a modal tool is active. Fo
 
 Tool                  Menu
 ----                  -----------
+Box Select Tool       #menu(Menu/Edit/Tools/Box Select Tool)
 Complex Shape Tool    #menu(Menu/Edit/Tools/Brush Tool)
 Rotate Tool           #menu(Menu/Edit/Tools/Rotate Tool)
 Sweep Tool            #menu(Menu/Edit/Tools/Sweep Tool)
@@ -360,6 +364,7 @@ To cancel a mouse drag, hit #action(Controls/Map view/Cancel). The operation wil
 
 State                 Effect
 -----                 ------
+Box Select Tool       Cancel current drag; deactivate tool
 Complex Shape Tool    Discard all placed points; deactivate tool
 Clip Tool             Discard most recently placed clip point; deactivate tool
 Sweep Tool            Move the destination cap back onto the selected faces; deactivate tool

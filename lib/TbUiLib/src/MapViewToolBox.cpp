@@ -26,6 +26,7 @@
 #include "mdl/Map.h"
 #include "mdl/Selection.h"
 #include "ui/AssembleBrushTool.h"
+#include "ui/BoxSelectionTool.h"
 #include "ui/ClipTool.h"
 #include "ui/ControlPointTool.h"
 #include "ui/ControlPointToolPage.h"
@@ -73,6 +74,16 @@ const AssembleBrushTool& MapViewToolBox::assembleBrushTool() const
 AssembleBrushTool& MapViewToolBox::assembleBrushTool()
 {
   return KDL_CONST_OVERLOAD(assembleBrushTool());
+}
+
+const BoxSelectionTool& MapViewToolBox::boxSelectionTool() const
+{
+  return *m_boxSelectionTool;
+}
+
+BoxSelectionTool& MapViewToolBox::boxSelectionTool()
+{
+  return KDL_CONST_OVERLOAD(boxSelectionTool());
 }
 
 const CreateEntityTool& MapViewToolBox::createEntityTool() const
@@ -218,6 +229,24 @@ void MapViewToolBox::performAssembleBrush()
   contract_pre(assembleBrushToolActive());
 
   m_assembleBrushTool->createBrushes();
+}
+
+bool MapViewToolBox::canToggleBoxSelectionTool() const
+{
+  return true;
+}
+
+void MapViewToolBox::toggleBoxSelectionTool()
+{
+  if (canToggleBoxSelectionTool())
+  {
+    toggleTool(boxSelectionTool());
+  }
+}
+
+bool MapViewToolBox::boxSelectionToolActive() const
+{
+  return m_boxSelectionTool->active();
 }
 
 bool MapViewToolBox::canToggleClipTool() const
@@ -465,8 +494,8 @@ bool MapViewToolBox::controlPointToolActive() const
 
 bool MapViewToolBox::anyModalToolActive() const
 {
-  return rotateToolActive() || sweepToolActive() || scaleToolActive() || shearToolActive()
-         || anyNodeHandleToolActive();
+  return boxSelectionToolActive() || rotateToolActive() || sweepToolActive()
+         || scaleToolActive() || shearToolActive() || anyNodeHandleToolActive();
 }
 
 void MapViewToolBox::moveNodeHandles(const vm::vec3d& delta)
@@ -497,6 +526,7 @@ void MapViewToolBox::createTools(QStackedLayout* bookCtrl)
 
   m_clipTool = std::make_unique<ClipTool>(m_document);
   m_assembleBrushTool = std::make_unique<AssembleBrushTool>(m_document);
+  m_boxSelectionTool = std::make_unique<BoxSelectionTool>(m_document);
   m_createEntityTool = std::make_unique<CreateEntityTool>(m_document);
   m_drawShapeTool = std::make_unique<DrawShapeTool>(m_document);
   m_moveObjectsTool = std::make_unique<MoveObjectsTool>(m_document);
@@ -511,6 +541,7 @@ void MapViewToolBox::createTools(QStackedLayout* bookCtrl)
   m_controlPointTool = std::make_unique<ControlPointTool>(m_document);
 
   addExclusiveToolGroup(
+    boxSelectionTool(),
     assembleBrushTool(),
     rotateTool(),
     sweepTool(),
@@ -522,6 +553,7 @@ void MapViewToolBox::createTools(QStackedLayout* bookCtrl)
     clipTool());
 
   addExclusiveToolGroup(
+    boxSelectionTool(),
     assembleBrushTool(),
     vertexTool(),
     edgeTool(),
@@ -531,6 +563,8 @@ void MapViewToolBox::createTools(QStackedLayout* bookCtrl)
 
   suppressWhileActive(
     assembleBrushTool(), moveObjectsTool(), extrudeTool(), drawShapeTool());
+  suppressWhileActive(
+    boxSelectionTool(), moveObjectsTool(), extrudeTool(), drawShapeTool());
   suppressWhileActive(rotateTool(), moveObjectsTool(), extrudeTool(), drawShapeTool());
   suppressWhileActive(sweepTool(), moveObjectsTool(), extrudeTool(), drawShapeTool());
   suppressWhileActive(scaleTool(), moveObjectsTool(), extrudeTool(), drawShapeTool());
@@ -543,6 +577,7 @@ void MapViewToolBox::createTools(QStackedLayout* bookCtrl)
   suppressWhileActive(clipTool(), moveObjectsTool(), extrudeTool(), drawShapeTool());
 
   addTool(moveObjectsTool());
+  addTool(boxSelectionTool());
   addTool(rotateTool());
   addTool(sweepTool());
   addTool(scaleTool());
@@ -645,8 +680,8 @@ void MapViewToolBox::updateToolPage()
     m_bookCtrl->setCurrentWidget(m_controlPointToolPage);
   }
   else if (
-    shearToolActive() || vertexToolActive() || edgeToolActive() || faceToolActive()
-    || clipToolActive())
+    boxSelectionToolActive() || shearToolActive() || vertexToolActive()
+    || edgeToolActive() || faceToolActive() || clipToolActive())
   {
     m_bookCtrl->setCurrentWidget(m_emptyToolPage);
   }

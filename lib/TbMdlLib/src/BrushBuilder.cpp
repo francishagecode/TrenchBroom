@@ -38,6 +38,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
+#include <optional>
 #include <ranges>
 #include <string>
 #include <utility>
@@ -512,14 +514,14 @@ namespace
 
 // Maps the tunnel (extrusion) axis to the span and vertical axes of the arch's
 // cross-section. Arches rise along world Z where possible so they stand upright.
-struct ArchAxes
+struct UprightAxes
 {
   size_t tunnel;
   size_t span;
   size_t vertical;
 };
 
-ArchAxes archAxes(const vm::axis::type axis)
+UprightAxes uprightAxes(const vm::axis::type axis)
 {
   switch (axis)
   {
@@ -548,7 +550,7 @@ Result<std::vector<Brush>> BrushBuilder::createArch(
   const vm::axis::type axis,
   const std::string& textureName) const
 {
-  const auto axes = archAxes(axis);
+  const auto axes = uprightAxes(axis);
 
   const auto sMin = bounds.min[axes.span];
   const auto sMax = bounds.max[axes.span];
@@ -650,6 +652,1108 @@ Result<std::vector<Brush>> BrushBuilder::createArch(
                       })
                     | kdl::values();
            });
+}
+
+namespace
+{
+
+struct CorridorBoundaryPoint
+{
+  vm::vec2d outer;
+  vm::vec2d inner;
+};
+
+vm::vec2d roundedRectPoint(
+  const vm::vec2d& center,
+  const vm::vec2d& halfSize,
+  const double radius,
+  const vm::vec2d& corner,
+  const double angle)
+{
+  const auto cornerCenter = center + corner * (halfSize - vm::vec2d::fill(radius));
+  return cornerCenter + vm::vec2d{std::cos(angle), std::sin(angle)} * radius;
+}
+
+std::vector<CorridorBoundaryPoint> makeCorridorBoundary(
+  const vm::bbox2d& bounds, const CorridorShape& shape, const double radius)
+{
+  const auto center = bounds.center();
+  const auto outerHalfSize = bounds.size() / 2.0;
+  const auto innerHalfSize = outerHalfSize - vm::vec2d::fill(shape.wallThickness);
+  const auto innerRadius = std::max(radius - shape.wallThickness, 0.0);
+
+  const auto point = [&](const vm::vec2d& corner, const double angle) {
+    return CorridorBoundaryPoint{
+      roundedRectPoint(center, outerHalfSize, radius, corner, angle),
+      roundedRectPoint(center, innerHalfSize, innerRadius, corner, angle),
+    };
+  };
+
+  auto boundary = std::vector<CorridorBoundaryPoint>{};
+  boundary.reserve(
+    4u * shape.cornerSegments + 4u + (shape.ceilingRecessDepth > 0.0 ? 4u : 0u)
+    + (shape.sideRecessDepth > 0.0 ? 8u : 0u));
+
+  const auto append = [&](const vm::vec2d& outer, const vm::vec2d& inner) {
+    boundary.push_back({outer, inner});
+  };
+  const auto appendCorner =
+    [&](const vm::vec2d& corner, const double startAngle, const bool includeEnd) {
+      const auto end = includeEnd ? shape.cornerSegments : shape.cornerSegments - 1u;
+      for (size_t i = 1u; i <= end; ++i)
+      {
+        const auto angle =
+          startAngle + vm::Cd::half_pi() * double(i) / double(shape.cornerSegments);
+        boundary.push_back(point(corner, angle));
+      }
+    };
+
+  // Start at the upper-right tangent and walk counter-clockwise around the shell.
+  boundary.push_back(point({1.0, 1.0}, vm::Cd::half_pi()));
+
+  if (shape.ceilingRecessDepth > 0.0)
+  {
+    const auto halfWidth = shape.ceilingRecessWidth / 2.0;
+    const auto transitionWidth =
+      std::min(shape.wallThickness, innerHalfSize.x() - innerRadius - halfWidth);
+    const auto outerY = bounds.max.y();
+    const auto innerY = bounds.max.y() - shape.wallThickness;
+    append(
+      {center.x() + halfWidth + transitionWidth, outerY},
+      {center.x() + halfWidth, innerY});
+    append(
+      {center.x() + halfWidth, outerY},
+      {center.x() + halfWidth, innerY + shape.ceilingRecessDepth});
+    append(
+      {center.x() - halfWidth, outerY},
+      {center.x() - halfWidth, innerY + shape.ceilingRecessDepth});
+    append(
+      {center.x() - halfWidth - transitionWidth, outerY},
+      {center.x() - halfWidth, innerY});
+  }
+
+  boundary.push_back(point({-1.0, 1.0}, vm::Cd::half_pi()));
+  appendCorner({-1.0, 1.0}, vm::Cd::half_pi(), true);
+
+  if (shape.sideRecessDepth > 0.0)
+  {
+    const auto halfHeight = shape.sideRecessHeight / 2.0;
+    const auto transitionHeight =
+      std::min(shape.wallThickness, innerHalfSize.y() - innerRadius - halfHeight);
+    const auto outerX = bounds.min.x();
+    const auto innerX = bounds.min.x() + shape.wallThickness;
+    append(
+      {outerX, center.y() + halfHeight + transitionHeight},
+      {innerX, center.y() + halfHeight});
+    append(
+      {outerX, center.y() + halfHeight},
+      {innerX - shape.sideRecessDepth, center.y() + halfHeight});
+    append(
+      {outerX, center.y() - halfHeight},
+      {innerX - shape.sideRecessDepth, center.y() - halfHeight});
+    append(
+      {outerX, center.y() - halfHeight - transitionHeight},
+      {innerX, center.y() - halfHeight});
+  }
+
+  boundary.push_back(point({-1.0, -1.0}, vm::Cd::pi()));
+  appendCorner({-1.0, -1.0}, vm::Cd::pi(), true);
+
+  boundary.push_back(point({1.0, -1.0}, 3.0 * vm::Cd::half_pi()));
+  appendCorner({1.0, -1.0}, 3.0 * vm::Cd::half_pi(), true);
+
+  if (shape.sideRecessDepth > 0.0)
+  {
+    const auto halfHeight = shape.sideRecessHeight / 2.0;
+    const auto transitionHeight =
+      std::min(shape.wallThickness, innerHalfSize.y() - innerRadius - halfHeight);
+    const auto outerX = bounds.max.x();
+    const auto innerX = bounds.max.x() - shape.wallThickness;
+    append(
+      {outerX, center.y() - halfHeight - transitionHeight},
+      {innerX, center.y() - halfHeight});
+    append(
+      {outerX, center.y() - halfHeight},
+      {innerX + shape.sideRecessDepth, center.y() - halfHeight});
+    append(
+      {outerX, center.y() + halfHeight},
+      {innerX + shape.sideRecessDepth, center.y() + halfHeight});
+    append(
+      {outerX, center.y() + halfHeight + transitionHeight},
+      {innerX, center.y() + halfHeight});
+  }
+
+  boundary.push_back(point({1.0, 1.0}, 0.0));
+  appendCorner({1.0, 1.0}, 0.0, false);
+
+  auto result = std::vector<CorridorBoundaryPoint>{};
+  result.reserve(boundary.size());
+  for (const auto& boundaryPoint : boundary)
+  {
+    if (
+      result.empty() || boundaryPoint.outer != result.back().outer
+      || boundaryPoint.inner != result.back().inner)
+    {
+      result.push_back(boundaryPoint);
+    }
+  }
+  if (
+    result.size() > 1u && result.front().outer == result.back().outer
+    && result.front().inner == result.back().inner)
+  {
+    result.pop_back();
+  }
+
+  return result;
+}
+
+std::optional<std::string> corridorShapeError(const CorridorShape& corridorShape)
+{
+  if (corridorShape.wallThickness <= 0.0)
+  {
+    return "Corridor wall thickness must be greater than zero";
+  }
+  if (corridorShape.cornerRadius <= 0.0)
+  {
+    return "Corridor corner radius must be greater than zero";
+  }
+  if (corridorShape.cornerSegments == 0u)
+  {
+    return "Corridor corner segments must be greater than zero";
+  }
+  if (
+    corridorShape.ceilingRecessDepth < 0.0
+    || corridorShape.ceilingRecessDepth >= corridorShape.wallThickness)
+  {
+    return "Corridor ceiling recess depth must be non-negative and less than wall "
+           "thickness";
+  }
+  if (corridorShape.ceilingRecessDepth > 0.0 && corridorShape.ceilingRecessWidth <= 0.0)
+  {
+    return "Corridor ceiling recess width must be greater than zero";
+  }
+  if (
+    corridorShape.sideRecessDepth < 0.0
+    || corridorShape.sideRecessDepth >= corridorShape.wallThickness)
+  {
+    return "Corridor side recess depth must be non-negative and less than wall thickness";
+  }
+  if (corridorShape.sideRecessDepth > 0.0 && corridorShape.sideRecessHeight <= 0.0)
+  {
+    return "Corridor side recess height must be greater than zero";
+  }
+
+  return std::nullopt;
+}
+
+std::optional<CorridorShape> fitCorridorShapeToBounds(
+  const CorridorShape& corridorShape, const double width, const double height)
+{
+  if (width <= 0.0 || height <= 0.0)
+  {
+    return std::nullopt;
+  }
+
+  auto shape = corridorShape;
+  shape.wallThickness =
+    std::min(corridorShape.wallThickness, std::min(width, height) / 4.0);
+  shape.cornerRadius = std::min({corridorShape.cornerRadius, width / 2.0, height / 2.0});
+  if (shape.cornerRadius >= width / 2.0 && shape.cornerRadius >= height / 2.0)
+  {
+    // A radius that consumes both straight sides collapses the four rounded-rect
+    // corners onto one center point. Keep a small straight section so each shell
+    // fragment remains a complete convex brush during a square first-grid drag.
+    shape.cornerRadius =
+      std::max(0.0, std::min(width, height) / 2.0 - shape.wallThickness);
+  }
+
+  const auto innerRadius = std::max(shape.cornerRadius - shape.wallThickness, 0.0);
+  const auto innerTopHalfWidth = width / 2.0 - shape.wallThickness - innerRadius;
+  const auto innerSideHalfHeight = height / 2.0 - shape.wallThickness - innerRadius;
+  const auto fitRecessExtent = [&](const double requested, const double halfAvailable) {
+    const auto available = std::max(0.0, 2.0 * halfAvailable);
+    const auto margin = std::min(shape.wallThickness, available / 2.0);
+    return std::min(requested, available - margin);
+  };
+  const auto fitRecessDepth = [&](const double requested) {
+    return requested < shape.wallThickness ? requested : shape.wallThickness / 2.0;
+  };
+
+  shape.ceilingRecessWidth =
+    fitRecessExtent(corridorShape.ceilingRecessWidth, innerTopHalfWidth);
+  shape.ceilingRecessDepth = shape.ceilingRecessWidth > 0.0
+                               ? fitRecessDepth(corridorShape.ceilingRecessDepth)
+                               : 0.0;
+  shape.sideRecessHeight =
+    fitRecessExtent(corridorShape.sideRecessHeight, innerSideHalfHeight);
+  shape.sideRecessDepth =
+    shape.sideRecessHeight > 0.0 ? fitRecessDepth(corridorShape.sideRecessDepth) : 0.0;
+  return shape;
+}
+
+} // namespace
+
+Result<std::vector<Brush>> BrushBuilder::createCorridor(
+  const vm::bbox3d& bounds,
+  const CorridorShape& corridorShape,
+  const vm::axis::type axis,
+  const std::string& textureName) const
+{
+  if (const auto error = corridorShapeError(corridorShape))
+  {
+    return Error{*error};
+  }
+
+  const auto axes = uprightAxes(axis);
+  const auto width = bounds.size()[axes.span];
+  const auto height = bounds.size()[axes.vertical];
+  const auto depth = bounds.size()[axes.tunnel];
+
+  if (depth <= 0.0)
+  {
+    return Result<std::vector<Brush>>{std::vector<Brush>{}};
+  }
+
+  const auto fittedShape = fitCorridorShapeToBounds(corridorShape, width, height);
+  if (!fittedShape)
+  {
+    return Result<std::vector<Brush>>{std::vector<Brush>{}};
+  }
+  const auto& shape = *fittedShape;
+  const auto radius = shape.cornerRadius;
+
+  const auto crossSectionBounds = vm::bbox2d{
+    {bounds.min[axes.span], bounds.min[axes.vertical]},
+    {bounds.max[axes.span], bounds.max[axes.vertical]},
+  };
+  const auto boundary = makeCorridorBoundary(crossSectionBounds, shape, radius);
+
+  const auto toPoint = [&](const vm::vec2d& p, const double w) {
+    auto result = vm::vec3d{};
+    result[axes.span] = p.x();
+    result[axes.vertical] = p.y();
+    result[axes.tunnel] = w;
+    return result;
+  };
+
+  auto brushes = std::vector<Result<Brush>>{};
+  brushes.reserve(boundary.size());
+  for (size_t i = 0u; i < boundary.size(); ++i)
+  {
+    const auto& current = boundary[i];
+    const auto& next = boundary[(i + 1u) % boundary.size()];
+    const auto vertices = std::vector{
+      toPoint(current.outer, bounds.min[axes.tunnel]),
+      toPoint(current.outer, bounds.max[axes.tunnel]),
+      toPoint(next.outer, bounds.min[axes.tunnel]),
+      toPoint(next.outer, bounds.max[axes.tunnel]),
+      toPoint(current.inner, bounds.min[axes.tunnel]),
+      toPoint(current.inner, bounds.max[axes.tunnel]),
+      toPoint(next.inner, bounds.min[axes.tunnel]),
+      toPoint(next.inner, bounds.max[axes.tunnel]),
+    };
+    brushes.push_back(createBrush(vertices, textureName));
+  }
+
+  return brushes | kdl::fold;
+}
+
+Result<std::vector<Brush>> BrushBuilder::createCorridorBend(
+  const vm::bbox3d& bounds,
+  const CorridorShape& corridorShape,
+  const vm::axis::type axis,
+  const CorridorBendAngle angle,
+  const CorridorBendDirection direction,
+  const size_t segmentsPer45Degrees,
+  const std::string& textureName) const
+{
+  if (const auto error = corridorShapeError(corridorShape))
+  {
+    return Error{*error};
+  }
+  if (axis == vm::axis::z)
+  {
+    return Error{"Corridor bends require a horizontal X or Y axis"};
+  }
+  if (segmentsPer45Degrees == 0u)
+  {
+    return Error{"Corridor bend segments must be greater than zero"};
+  }
+
+  const auto axes = uprightAxes(axis);
+  const auto width = bounds.size()[axes.span];
+  const auto height = bounds.size()[axes.vertical];
+  const auto depth = bounds.size()[axes.tunnel];
+  if (depth <= 0.0)
+  {
+    return Result<std::vector<Brush>>{std::vector<Brush>{}};
+  }
+
+  const auto fittedShape = fitCorridorShapeToBounds(corridorShape, width, height);
+  if (!fittedShape)
+  {
+    return Result<std::vector<Brush>>{std::vector<Brush>{}};
+  }
+  const auto& shape = *fittedShape;
+  const auto profileRadius = shape.cornerRadius;
+
+  const auto bendAngle =
+    angle == CorridorBendAngle::Deg45 ? vm::Cd::quarter_pi() : vm::Cd::half_pi();
+  const auto centerlineRadius = depth / std::sin(bendAngle) - width / 2.0;
+  if (centerlineRadius < width / 2.0)
+  {
+    return Result<std::vector<Brush>>{std::vector<Brush>{}};
+  }
+
+  const auto crossSectionBounds = vm::bbox2d{
+    {bounds.min[axes.span], bounds.min[axes.vertical]},
+    {bounds.max[axes.span], bounds.max[axes.vertical]},
+  };
+  const auto boundary = makeCorridorBoundary(crossSectionBounds, shape, profileRadius);
+  const auto spanCenter = crossSectionBounds.center().x();
+  auto turnSign = direction == CorridorBendDirection::Left ? 1.0 : -1.0;
+  if (axis == vm::axis::y)
+  {
+    turnSign = -turnSign;
+  }
+
+  const auto toPoint = [&](const vm::vec2d& p, const double theta) {
+    const auto u = p.x() - spanCenter;
+    auto result = vm::vec3d{};
+    result[axes.tunnel] = bounds.min[axes.tunnel] + centerlineRadius * std::sin(theta)
+                          - turnSign * u * std::sin(theta);
+    result[axes.span] = spanCenter + turnSign * centerlineRadius * (1.0 - std::cos(theta))
+                        + u * std::cos(theta);
+    result[axes.vertical] = p.y();
+    return result;
+  };
+
+  const auto numSegments =
+    segmentsPer45Degrees * (angle == CorridorBendAngle::Deg90 ? 2u : 1u);
+  auto brushes = std::vector<Result<Brush>>{};
+  brushes.reserve(boundary.size() * numSegments);
+  for (size_t segmentIndex = 0u; segmentIndex < numSegments; ++segmentIndex)
+  {
+    const auto theta0 = bendAngle * double(segmentIndex) / double(numSegments);
+    const auto theta1 = bendAngle * double(segmentIndex + 1u) / double(numSegments);
+    for (size_t boundaryIndex = 0u; boundaryIndex < boundary.size(); ++boundaryIndex)
+    {
+      const auto& current = boundary[boundaryIndex];
+      const auto& next = boundary[(boundaryIndex + 1u) % boundary.size()];
+      const auto vertices = std::vector{
+        toPoint(current.outer, theta0),
+        toPoint(current.outer, theta1),
+        toPoint(next.outer, theta0),
+        toPoint(next.outer, theta1),
+        toPoint(current.inner, theta0),
+        toPoint(current.inner, theta1),
+        toPoint(next.inner, theta0),
+        toPoint(next.inner, theta1),
+      };
+      brushes.push_back(createBrush(vertices, textureName));
+    }
+  }
+
+  return brushes | kdl::fold;
+}
+
+Result<std::vector<Brush>> BrushBuilder::createCorridorTJunction(
+  const vm::bbox3d& bounds,
+  const CorridorShape& corridorShape,
+  const vm::axis::type axis,
+  const double corridorWidth,
+  const std::string& textureName) const
+{
+  if (const auto error = corridorShapeError(corridorShape))
+  {
+    return Error{*error};
+  }
+  if (axis == vm::axis::z)
+  {
+    return Error{"Corridor T-junctions require a horizontal X or Y axis"};
+  }
+  if (corridorWidth <= 0.0)
+  {
+    return Error{"Corridor T-junction width must be greater than zero"};
+  }
+
+  const auto axes = uprightAxes(axis);
+  const auto height = bounds.size()[axes.vertical];
+  const auto tunnelLength = bounds.size()[axes.tunnel];
+  const auto crossbarLength = bounds.size()[axes.span];
+  if (height <= 0.0 || tunnelLength <= 0.0 || crossbarLength <= 0.0)
+  {
+    return Result<std::vector<Brush>>{std::vector<Brush>{}};
+  }
+
+  const auto fittedWidth =
+    std::min(corridorWidth, std::min(tunnelLength, crossbarLength) / 2.0);
+  const auto fittedShape = fitCorridorShapeToBounds(corridorShape, fittedWidth, height);
+  if (!fittedShape)
+  {
+    return Result<std::vector<Brush>>{std::vector<Brush>{}};
+  }
+  const auto& shape = *fittedShape;
+  const auto profileRadius = shape.cornerRadius;
+
+  const auto tunnelMax = bounds.max[axes.tunnel];
+  const auto spanMin = bounds.min[axes.span];
+  const auto spanMax = bounds.max[axes.span];
+  const auto spanCenter = (spanMin + spanMax) / 2.0;
+  const auto halfWidth = fittedWidth / 2.0;
+  const auto branchPlane = tunnelMax - fittedWidth;
+  const auto crossbarAxis = vm::axis::type(axes.span);
+
+  auto stemBounds = bounds;
+  stemBounds.max[axes.tunnel] = branchPlane;
+  stemBounds.min[axes.span] = spanCenter - halfWidth;
+  stemBounds.max[axes.span] = spanCenter + halfWidth;
+
+  auto lowerCrossbarBounds = bounds;
+  lowerCrossbarBounds.min[axes.tunnel] = branchPlane;
+  lowerCrossbarBounds.max[axes.span] = spanCenter - halfWidth;
+
+  auto centerCrossbarBounds = bounds;
+  centerCrossbarBounds.min[axes.tunnel] = branchPlane;
+  centerCrossbarBounds.min[axes.span] = spanCenter - halfWidth;
+  centerCrossbarBounds.max[axes.span] = spanCenter + halfWidth;
+
+  auto upperCrossbarBounds = bounds;
+  upperCrossbarBounds.min[axes.tunnel] = branchPlane;
+  upperCrossbarBounds.min[axes.span] = spanCenter + halfWidth;
+
+  auto centerResult =
+    createCorridor(centerCrossbarBounds, shape, crossbarAxis, textureName)
+    | kdl::transform([&](auto brushes) {
+        const auto branchSideLimit = branchPlane + profileRadius + vm::Cd::almost_zero();
+        std::erase_if(brushes, [&](const auto& brush) {
+          return brush.bounds().max[axes.tunnel] <= branchSideLimit;
+        });
+        return brushes;
+      });
+
+  auto partResults = std::vector<Result<std::vector<Brush>>>{};
+  partResults.reserve(4u);
+  partResults.push_back(createCorridor(stemBounds, shape, axis, textureName));
+  partResults.push_back(
+    createCorridor(lowerCrossbarBounds, shape, crossbarAxis, textureName));
+  partResults.push_back(std::move(centerResult));
+  partResults.push_back(
+    createCorridor(upperCrossbarBounds, shape, crossbarAxis, textureName));
+
+  return partResults | kdl::fold | kdl::transform([](auto parts) {
+           auto brushes = std::vector<Brush>{};
+           auto brushCount = size_t{0u};
+           for (const auto& part : parts)
+           {
+             brushCount += part.size();
+           }
+           brushes.reserve(brushCount);
+           for (auto& part : parts)
+           {
+             brushes.insert(
+               brushes.end(),
+               std::make_move_iterator(part.begin()),
+               std::make_move_iterator(part.end()));
+           }
+           return brushes;
+         });
+}
+
+namespace
+{
+
+double chamberForward(const vm::vec2d& point, const vm::axis::type axis)
+{
+  return point[axis == vm::axis::x ? 0u : 1u];
+}
+
+double chamberSpan(const vm::vec2d& point, const vm::axis::type axis)
+{
+  return point[axis == vm::axis::x ? 1u : 0u];
+}
+
+vm::vec2d chamberPoint(const double forward, const double span, const vm::axis::type axis)
+{
+  return axis == vm::axis::x ? vm::vec2d{forward, span} : vm::vec2d{span, forward};
+}
+
+double polygonArea(const std::vector<vm::vec2d>& polygon)
+{
+  auto twiceArea = 0.0;
+  for (size_t i = 0u; i < polygon.size(); ++i)
+  {
+    const auto& current = polygon[i];
+    const auto& next = polygon[(i + 1u) % polygon.size()];
+    twiceArea += current.x() * next.y() - next.x() * current.y();
+  }
+  return twiceArea / 2.0;
+}
+
+void appendUnique(std::vector<vm::vec2d>& points, const vm::vec2d& point)
+{
+  if (points.empty() || !vm::is_equal(points.back(), point, vm::Cd::almost_zero()))
+  {
+    points.push_back(point);
+  }
+}
+
+void removeCollinearPoints(std::vector<vm::vec2d>& points)
+{
+  auto removedPoint = true;
+  while (removedPoint && points.size() >= 3u)
+  {
+    removedPoint = false;
+    for (size_t i = 0u; i < points.size(); ++i)
+    {
+      const auto& previous = points[(i + points.size() - 1u) % points.size()];
+      const auto& current = points[i];
+      const auto& next = points[(i + 1u) % points.size()];
+      if (vm::is_colinear(previous, current, next))
+      {
+        points.erase(std::next(points.begin(), std::ptrdiff_t(i)));
+        removedPoint = true;
+        break;
+      }
+    }
+  }
+}
+
+void appendArc(
+  std::vector<vm::vec2d>& points,
+  const vm::vec2d& center,
+  const double radius,
+  const double startAngle,
+  const double endAngle,
+  const size_t segments)
+{
+  for (size_t i = 0u; i <= segments; ++i)
+  {
+    const auto angle =
+      startAngle + (endAngle - startAngle) * double(i) / double(segments);
+    appendUnique(points, center + vm::vec2d{std::cos(angle), std::sin(angle)} * radius);
+  }
+}
+
+std::vector<vm::vec2d> makeChamberFootprint(
+  const vm::bbox2d& bounds, const ChamberShape& shape, const vm::axis::type axis)
+{
+  const auto forwardMin = axis == vm::axis::x ? bounds.min.x() : bounds.min.y();
+  const auto forwardMax = axis == vm::axis::x ? bounds.max.x() : bounds.max.y();
+  const auto spanMin = axis == vm::axis::x ? bounds.min.y() : bounds.min.x();
+  const auto spanMax = axis == vm::axis::x ? bounds.max.y() : bounds.max.x();
+  const auto forwardLength = forwardMax - forwardMin;
+  const auto spanLength = spanMax - spanMin;
+  const auto spanCenter = (spanMin + spanMax) / 2.0;
+
+  auto local = std::vector<vm::vec2d>{};
+  const auto appendLocal = [&](const double forward, const double span) {
+    appendUnique(local, {forward, span});
+  };
+
+  switch (shape.footprint)
+  {
+  case ChamberFootprint::Chamfered:
+  case ChamberFootprint::Octagonal: {
+    const auto forwardCut = shape.footprint == ChamberFootprint::Octagonal
+                              ? forwardLength * (1.0 - 1.0 / std::sqrt(2.0))
+                              : shape.cornerSize;
+    const auto spanCut = shape.footprint == ChamberFootprint::Octagonal
+                           ? spanLength * (1.0 - 1.0 / std::sqrt(2.0))
+                           : shape.cornerSize;
+    const auto cutForward = std::clamp(forwardCut, 0.0, forwardLength / 2.0);
+    const auto entranceOuterWidth =
+      shape.openEntrance ? shape.entranceWidth + 2.0 * shape.wallThickness : 0.0;
+    const auto maximumEntranceSpanCut =
+      shape.openEntrance ? std::max(0.0, (spanLength - entranceOuterWidth) / 2.0)
+                         : spanLength / 2.0;
+    const auto entranceCutSpan = std::clamp(spanCut, 0.0, maximumEntranceSpanCut);
+    const auto farCutSpan = std::clamp(spanCut, 0.0, spanLength / 2.0);
+    appendLocal(forwardMin + cutForward, spanMin);
+    appendLocal(forwardMax - cutForward, spanMin);
+    appendLocal(forwardMax, spanMin + farCutSpan);
+    appendLocal(forwardMax, spanMax - farCutSpan);
+    appendLocal(forwardMax - cutForward, spanMax);
+    appendLocal(forwardMin + cutForward, spanMax);
+    appendLocal(forwardMin, spanMax - entranceCutSpan);
+    appendLocal(forwardMin, spanMin + entranceCutSpan);
+    break;
+  }
+  case ChamberFootprint::Capsule: {
+    const auto entranceOuterWidth =
+      shape.openEntrance ? shape.entranceWidth + 2.0 * shape.wallThickness : 0.0;
+    const auto desiredRadius =
+      shape.openEntrance ? (spanLength - entranceOuterWidth) / 2.0 : spanLength / 2.0;
+    const auto radius =
+      std::clamp(desiredRadius, 0.0, std::min(forwardLength, spanLength) / 2.0);
+    if (radius <= vm::Cd::almost_zero())
+    {
+      appendLocal(forwardMin, spanMin);
+      appendLocal(forwardMax, spanMin);
+      appendLocal(forwardMax, spanMax);
+      appendLocal(forwardMin, spanMax);
+      break;
+    }
+
+    appendLocal(forwardMin + radius, spanMin);
+    appendLocal(forwardMax - radius, spanMin);
+    appendArc(
+      local,
+      {forwardMax - radius, spanMin + radius},
+      radius,
+      -vm::Cd::half_pi(),
+      0.0,
+      shape.footprintSegments);
+    appendArc(
+      local,
+      {forwardMax - radius, spanMax - radius},
+      radius,
+      0.0,
+      vm::Cd::half_pi(),
+      shape.footprintSegments);
+    appendArc(
+      local,
+      {forwardMin + radius, spanMax - radius},
+      radius,
+      vm::Cd::half_pi(),
+      vm::Cd::pi(),
+      shape.footprintSegments);
+    appendArc(
+      local,
+      {forwardMin + radius, spanMin + radius},
+      radius,
+      vm::Cd::pi(),
+      3.0 * vm::Cd::half_pi(),
+      shape.footprintSegments);
+    break;
+  }
+  case ChamberFootprint::Wedge: {
+    const auto farHalfWidth = spanLength / 2.0;
+    const auto entranceOuterWidth = shape.openEntrance
+                                      ? shape.entranceWidth + 2.0 * shape.wallThickness
+                                      : spanLength * 0.5;
+    const auto nearHalfWidth =
+      std::clamp(entranceOuterWidth / 2.0, shape.wallThickness, farHalfWidth);
+    appendLocal(forwardMin, spanCenter - nearHalfWidth);
+    appendLocal(forwardMax, spanMin);
+    appendLocal(forwardMax, spanMax);
+    appendLocal(forwardMin, spanCenter + nearHalfWidth);
+    break;
+  }
+  case ChamberFootprint::Apse: {
+    const auto radius = spanLength / 2.0;
+    const auto apseCenter = forwardMax - radius;
+    if (apseCenter <= forwardMin)
+    {
+      return {};
+    }
+    appendLocal(forwardMin, spanMin);
+    appendLocal(apseCenter, spanMin);
+    appendArc(
+      local,
+      {apseCenter, spanCenter},
+      radius,
+      -vm::Cd::half_pi(),
+      vm::Cd::half_pi(),
+      2u * shape.footprintSegments);
+    appendLocal(forwardMin, spanMax);
+    break;
+  }
+  }
+
+  if (
+    local.size() > 1u && vm::is_equal(local.front(), local.back(), vm::Cd::almost_zero()))
+  {
+    local.pop_back();
+  }
+  removeCollinearPoints(local);
+
+  auto result = local | std::views::transform([&](const auto& point) {
+                  return chamberPoint(point.x(), point.y(), axis);
+                })
+                | kdl::ranges::to<std::vector>();
+  if (polygonArea(result) < 0.0)
+  {
+    std::ranges::reverse(result);
+  }
+  return result;
+}
+
+double cross2d(const vm::vec2d& lhs, const vm::vec2d& rhs)
+{
+  return lhs.x() * rhs.y() - lhs.y() * rhs.x();
+}
+
+std::optional<std::vector<vm::vec2d>> insetConvexPolygon(
+  const std::vector<vm::vec2d>& polygon, const double amount)
+{
+  if (polygon.size() < 3u)
+  {
+    return std::nullopt;
+  }
+
+  auto result = std::vector<vm::vec2d>{};
+  result.reserve(polygon.size());
+  for (size_t i = 0u; i < polygon.size(); ++i)
+  {
+    const auto& previous = polygon[(i + polygon.size() - 1u) % polygon.size()];
+    const auto& current = polygon[i];
+    const auto& next = polygon[(i + 1u) % polygon.size()];
+    const auto previousDirection = current - previous;
+    const auto nextDirection = next - current;
+    const auto previousLength = vm::length(previousDirection);
+    const auto nextLength = vm::length(nextDirection);
+    if (previousLength <= vm::Cd::almost_zero() || nextLength <= vm::Cd::almost_zero())
+    {
+      return std::nullopt;
+    }
+
+    const auto previousNormal =
+      vm::vec2d{-previousDirection.y(), previousDirection.x()} / previousLength;
+    const auto nextNormal = vm::vec2d{-nextDirection.y(), nextDirection.x()} / nextLength;
+    const auto previousLinePoint = previous + previousNormal * amount;
+    const auto nextLinePoint = current + nextNormal * amount;
+    const auto denominator = cross2d(previousDirection, nextDirection);
+    if (std::abs(denominator) <= vm::Cd::almost_zero())
+    {
+      return std::nullopt;
+    }
+
+    const auto distance =
+      cross2d(nextLinePoint - previousLinePoint, nextDirection) / denominator;
+    const auto point = previousLinePoint + previousDirection * distance;
+    if (!std::isfinite(point.x()) || !std::isfinite(point.y()))
+    {
+      return std::nullopt;
+    }
+    result.push_back(point);
+  }
+
+  if (polygonArea(result) <= vm::Cd::almost_zero())
+  {
+    return std::nullopt;
+  }
+  return result;
+}
+
+std::vector<vm::vec2d> clipChamberPolygon(
+  const std::vector<vm::vec2d>& polygon,
+  const vm::axis::type axis,
+  const double boundary,
+  const bool keepGreater)
+{
+  auto result = std::vector<vm::vec2d>{};
+  if (polygon.empty())
+  {
+    return result;
+  }
+
+  const auto inside = [&](const vm::vec2d& point) {
+    return keepGreater ? chamberSpan(point, axis) >= boundary
+                       : chamberSpan(point, axis) <= boundary;
+  };
+  const auto intersection = [&](const vm::vec2d& a, const vm::vec2d& b) {
+    const auto aSpan = chamberSpan(a, axis);
+    const auto bSpan = chamberSpan(b, axis);
+    const auto t = (boundary - aSpan) / (bSpan - aSpan);
+    return a + (b - a) * t;
+  };
+
+  for (size_t i = 0u; i < polygon.size(); ++i)
+  {
+    const auto& current = polygon[i];
+    const auto& next = polygon[(i + 1u) % polygon.size()];
+    const auto currentInside = inside(current);
+    const auto nextInside = inside(next);
+    if (currentInside)
+    {
+      appendUnique(result, current);
+    }
+    if (currentInside != nextInside)
+    {
+      appendUnique(result, intersection(current, next));
+    }
+  }
+  if (
+    result.size() > 1u
+    && vm::is_equal(result.front(), result.back(), vm::Cd::almost_zero()))
+  {
+    result.pop_back();
+  }
+  return result;
+}
+
+std::vector<vm::vec3d> chamberPrismVertices(
+  const std::vector<vm::vec2d>& polygon, const double bottom, const double top)
+{
+  auto vertices = std::vector<vm::vec3d>{};
+  vertices.reserve(2u * polygon.size());
+  for (const auto& point : polygon)
+  {
+    vertices.emplace_back(point, bottom);
+    vertices.emplace_back(point, top);
+  }
+  return vertices;
+}
+
+std::vector<vm::vec3d> chamberWallVertices(
+  const vm::vec2d& outerStart,
+  const vm::vec2d& outerEnd,
+  const vm::vec2d& innerStart,
+  const vm::vec2d& innerEnd,
+  const double bottom,
+  const double top)
+{
+  return {
+    {outerStart, bottom},
+    {outerStart, top},
+    {outerEnd, bottom},
+    {outerEnd, top},
+    {innerStart, bottom},
+    {innerStart, top},
+    {innerEnd, bottom},
+    {innerEnd, top},
+  };
+}
+
+} // namespace
+
+Result<std::vector<Brush>> BrushBuilder::createChamberShell(
+  const vm::bbox3d& bounds,
+  const ChamberShape& chamberShape,
+  const vm::axis::type axis,
+  const std::string& textureName) const
+{
+  if (axis == vm::axis::z)
+  {
+    return Error{"Chamber shells require a horizontal X or Y axis"};
+  }
+  if (chamberShape.wallThickness <= 0.0)
+  {
+    return Error{"Chamber wall thickness must be greater than zero"};
+  }
+  if (chamberShape.cornerSize < 0.0)
+  {
+    return Error{"Chamber corner size must be non-negative"};
+  }
+  if (chamberShape.footprintSegments == 0u)
+  {
+    return Error{"Chamber footprint segments must be greater than zero"};
+  }
+  if (chamberShape.ceilingRise < 0.0)
+  {
+    return Error{"Chamber ceiling rise must be non-negative"};
+  }
+  if (chamberShape.ceilingSegments == 0u)
+  {
+    return Error{"Chamber ceiling segments must be greater than zero"};
+  }
+  if (
+    chamberShape.openEntrance
+    && (chamberShape.entranceWidth <= 0.0 || chamberShape.entranceHeight <= 0.0))
+  {
+    return Error{"Chamber entrance dimensions must be greater than zero"};
+  }
+
+  const auto width = bounds.size().x();
+  const auto depth = bounds.size().y();
+  const auto height = bounds.size().z();
+  if (width <= 0.0 || depth <= 0.0 || height <= 0.0)
+  {
+    return Result<std::vector<Brush>>{std::vector<Brush>{}};
+  }
+
+  // During a drag, one or more dimensions begin at a single grid unit. Constrain the
+  // authored dimensions to the available bounds so that the user always gets a preview
+  // which grows into the requested shape instead of an invisible drag.
+  auto shape = chamberShape;
+  shape.wallThickness =
+    std::min(chamberShape.wallThickness, std::min({width, depth, height}) / 4.0);
+  const auto maximumCeilingRise = (height - 2.0 * shape.wallThickness) / 2.0;
+  shape.ceilingRise = shape.ceiling == ChamberCeiling::Flat
+                        ? 0.0
+                        : std::min(chamberShape.ceilingRise, maximumCeilingRise);
+  if (shape.openEntrance)
+  {
+    const auto spanLength = axis == vm::axis::x ? depth : width;
+    shape.entranceWidth =
+      std::min(chamberShape.entranceWidth, spanLength - 2.0 * shape.wallThickness);
+    shape.entranceHeight = std::min(
+      chamberShape.entranceHeight,
+      height - 2.0 * shape.wallThickness - shape.ceilingRise);
+  }
+
+  const auto ceilingRise = shape.ceilingRise;
+  if (
+    width <= 2.0 * shape.wallThickness || depth <= 2.0 * shape.wallThickness
+    || height <= 2.0 * shape.wallThickness + ceilingRise
+    || (shape.openEntrance && (shape.entranceWidth <= 0.0 || shape.entranceHeight <= 0.0)))
+  {
+    return Result<std::vector<Brush>>{std::vector<Brush>{}};
+  }
+
+  const auto outer = makeChamberFootprint(bounds.xy(), shape, axis);
+  const auto inner = insetConvexPolygon(outer, shape.wallThickness);
+  if (outer.size() < 3u || !inner || inner->size() != outer.size())
+  {
+    return Result<std::vector<Brush>>{std::vector<Brush>{}};
+  }
+
+  const auto floorTop = bounds.min.z() + shape.wallThickness;
+  const auto ceilingSpring = bounds.max.z() - shape.wallThickness - ceilingRise;
+  const auto wallTop =
+    shape.ceiling == ChamberCeiling::Flat ? ceilingSpring : bounds.max.z();
+  if (ceilingSpring <= floorTop)
+  {
+    return Result<std::vector<Brush>>{std::vector<Brush>{}};
+  }
+
+  auto brushes = std::vector<Result<Brush>>{};
+  brushes.push_back(
+    createBrush(chamberPrismVertices(outer, bounds.min.z(), floorTop), textureName));
+
+  auto entranceEdge = std::optional<size_t>{};
+  if (shape.openEntrance)
+  {
+    const auto forwardMin = axis == vm::axis::x ? bounds.min.x() : bounds.min.y();
+    for (size_t i = 0u; i < outer.size(); ++i)
+    {
+      const auto& start = outer[i];
+      const auto& end = outer[(i + 1u) % outer.size()];
+      if (
+        std::abs(chamberForward(start, axis) - forwardMin) <= vm::Cd::almost_zero()
+        && std::abs(chamberForward(end, axis) - forwardMin) <= vm::Cd::almost_zero())
+      {
+        entranceEdge = i;
+        break;
+      }
+    }
+    if (!entranceEdge)
+    {
+      return Result<std::vector<Brush>>{std::vector<Brush>{}};
+    }
+  }
+
+  for (size_t i = 0u; i < outer.size(); ++i)
+  {
+    const auto next = (i + 1u) % outer.size();
+    if (!entranceEdge || i != *entranceEdge)
+    {
+      brushes.push_back(createBrush(
+        chamberWallVertices(
+          outer[i], outer[next], (*inner)[i], (*inner)[next], floorTop, wallTop),
+        textureName));
+      continue;
+    }
+
+    const auto spanCenter =
+      axis == vm::axis::x ? bounds.xy().center().y() : bounds.xy().center().x();
+    const auto openingMin = spanCenter - shape.entranceWidth / 2.0;
+    const auto openingMax = spanCenter + shape.entranceWidth / 2.0;
+    const auto interpolateAtSpan =
+      [&](const vm::vec2d& start, const vm::vec2d& end, const double span) {
+        const auto startSpan = chamberSpan(start, axis);
+        const auto t = (span - startSpan) / (chamberSpan(end, axis) - startSpan);
+        return std::pair{t, start + (end - start) * t};
+      };
+
+    const auto [outerMinT, outerMinPoint] =
+      interpolateAtSpan(outer[i], outer[next], openingMin);
+    const auto [outerMaxT, outerMaxPoint] =
+      interpolateAtSpan(outer[i], outer[next], openingMax);
+    const auto [innerMinT, innerMinPoint] =
+      interpolateAtSpan((*inner)[i], (*inner)[next], openingMin);
+    const auto [innerMaxT, innerMaxPoint] =
+      interpolateAtSpan((*inner)[i], (*inner)[next], openingMax);
+    if (
+      outerMinT < 0.0 || outerMinT > 1.0 || outerMaxT < 0.0 || outerMaxT > 1.0
+      || innerMinT < 0.0 || innerMinT > 1.0 || innerMaxT < 0.0 || innerMaxT > 1.0)
+    {
+      return Result<std::vector<Brush>>{std::vector<Brush>{}};
+    }
+
+    const auto outerStartPoint = outerMinT < outerMaxT ? outerMinPoint : outerMaxPoint;
+    const auto outerEndPoint = outerMinT < outerMaxT ? outerMaxPoint : outerMinPoint;
+    const auto innerStartPoint = innerMinT < innerMaxT ? innerMinPoint : innerMaxPoint;
+    const auto innerEndPoint = innerMinT < innerMaxT ? innerMaxPoint : innerMinPoint;
+    brushes.push_back(createBrush(
+      chamberWallVertices(
+        outer[i], outerStartPoint, (*inner)[i], innerStartPoint, floorTop, wallTop),
+      textureName));
+    brushes.push_back(createBrush(
+      chamberWallVertices(
+        outerEndPoint,
+        outer[next],
+        innerEndPoint,
+        (*inner)[next],
+        floorTop,
+        wallTop),
+      textureName));
+
+    const auto openingTop = floorTop + shape.entranceHeight;
+    if (openingTop < wallTop)
+    {
+      brushes.push_back(createBrush(
+        chamberWallVertices(
+          outerStartPoint,
+          outerEndPoint,
+          innerStartPoint,
+          innerEndPoint,
+          openingTop,
+          wallTop),
+        textureName));
+    }
+  }
+
+  if (shape.ceiling == ChamberCeiling::Flat)
+  {
+    brushes.push_back(createBrush(
+      chamberPrismVertices(outer, ceilingSpring, bounds.max.z()), textureName));
+  }
+  else
+  {
+    const auto spanMin = axis == vm::axis::x ? bounds.min.y() : bounds.min.x();
+    const auto spanMax = axis == vm::axis::x ? bounds.max.y() : bounds.max.x();
+    const auto spanCenter = (spanMin + spanMax) / 2.0;
+    const auto halfSpan = (spanMax - spanMin) / 2.0;
+    const auto segmentCount = 2u * shape.ceilingSegments;
+    const auto ceilingHeight = [&](const double span) {
+      const auto normalized = std::clamp((span - spanCenter) / halfSpan, -1.0, 1.0);
+      const auto factor = shape.ceiling == ChamberCeiling::BarrelVault
+                            ? std::sqrt(std::max(0.0, 1.0 - normalized * normalized))
+                            : 1.0 - std::abs(normalized);
+      return ceilingSpring + ceilingRise * factor;
+    };
+
+    for (size_t segment = 0u; segment < segmentCount; ++segment)
+    {
+      const auto segmentMin =
+        spanMin + (spanMax - spanMin) * double(segment) / double(segmentCount);
+      const auto segmentMax =
+        spanMin + (spanMax - spanMin) * double(segment + 1u) / double(segmentCount);
+      auto clipped = clipChamberPolygon(outer, axis, segmentMin, true);
+      clipped = clipChamberPolygon(clipped, axis, segmentMax, false);
+      if (clipped.size() < 3u)
+      {
+        continue;
+      }
+
+      const auto minHeight = ceilingHeight(segmentMin);
+      const auto maxHeight = ceilingHeight(segmentMax);
+      auto vertices = std::vector<vm::vec3d>{};
+      vertices.reserve(2u * clipped.size());
+      for (const auto& point : clipped)
+      {
+        const auto t =
+          (chamberSpan(point, axis) - segmentMin) / (segmentMax - segmentMin);
+        vertices.emplace_back(point, minHeight + (maxHeight - minHeight) * t);
+        vertices.emplace_back(point, bounds.max.z());
+      }
+      brushes.push_back(createBrush(vertices, textureName));
+    }
+  }
+
+  return brushes | kdl::fold;
 }
 
 namespace

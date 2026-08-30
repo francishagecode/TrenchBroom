@@ -131,6 +131,10 @@ std::string actionContextName(const ActionContext::Type actionContext)
     {
       actionContexts.emplace_back("sweep tool");
     }
+    if (actionContext & ActionContext::BoxSelectionTool)
+    {
+      actionContexts.emplace_back("box selection tool");
+    }
   }
 
   return kdl::str_join(actionContexts, ", ");

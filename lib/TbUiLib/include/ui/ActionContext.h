@@ -44,8 +44,9 @@ constexpr Type NoSelection = 1u << 11u;
 constexpr Type NodeSelection = 1u << 12u;
 constexpr Type FaceSelection = 1u << 13u;
 constexpr Type SelectionOwnedByTool = 1u << 14u;
+constexpr Type BoxSelectionTool = 1u << 15u;
 constexpr Type AnyTool = AnyNodeHandleTool | AssembleBrushTool | ClipTool | RotateTool
-                         | ScaleTool | ShearTool | SweepTool;
+                         | ScaleTool | ShearTool | SweepTool | BoxSelectionTool;
 constexpr Type AnyOrNoTool = AnyTool | NoTool;
 constexpr Type AnySelection = NodeSelection | FaceSelection;
 constexpr Type AnyOrNoSelection = AnySelection | NoSelection | SelectionOwnedByTool;

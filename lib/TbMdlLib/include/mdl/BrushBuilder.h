@@ -37,6 +37,63 @@ class Brush;
 class ModelFactory;
 enum class MapFormat;
 
+struct CorridorShape
+{
+  double wallThickness;
+  double cornerRadius;
+  size_t cornerSegments;
+  double ceilingRecessWidth;
+  double ceilingRecessDepth;
+  double sideRecessHeight;
+  double sideRecessDepth;
+
+  bool operator==(const CorridorShape&) const = default;
+};
+
+enum class CorridorBendAngle
+{
+  Deg45,
+  Deg90,
+};
+
+enum class CorridorBendDirection
+{
+  Left,
+  Right,
+};
+
+enum class ChamberFootprint
+{
+  Chamfered,
+  Octagonal,
+  Capsule,
+  Wedge,
+  Apse,
+};
+
+enum class ChamberCeiling
+{
+  Flat,
+  BarrelVault,
+  RaisedSpine,
+};
+
+struct ChamberShape
+{
+  ChamberFootprint footprint;
+  ChamberCeiling ceiling;
+  double wallThickness;
+  double cornerSize;
+  size_t footprintSegments;
+  double ceilingRise;
+  size_t ceilingSegments;
+  bool openEntrance;
+  double entranceWidth;
+  double entranceHeight;
+
+  bool operator==(const ChamberShape&) const = default;
+};
+
 class BrushBuilder
 {
 private:
@@ -116,6 +173,55 @@ public:
     const vm::bbox3d& bounds,
     double thickness,
     const CircleShape& circleShape,
+    vm::axis::type axis,
+    const std::string& textureName) const;
+
+  /**
+   * Creates an open-ended corridor shell from convex brush fragments. `axis` is the
+   * corridor's extrusion direction. The cross-section remains upright in world Z where
+   * possible and has rounded corners, a flat floor, and optional geometric recesses in
+   * the ceiling and side walls.
+   */
+  Result<std::vector<Brush>> createCorridor(
+    const vm::bbox3d& bounds,
+    const CorridorShape& corridorShape,
+    vm::axis::type axis,
+    const std::string& textureName) const;
+
+  /**
+   * Sweeps a corridor profile through a horizontal 45 or 90 degree arc. The profile
+   * starts on the minimum plane of `axis`; the bounds' axis length determines the bend
+   * radius. `segmentsPer45Degrees` controls the angular subdivision.
+   */
+  Result<std::vector<Brush>> createCorridorBend(
+    const vm::bbox3d& bounds,
+    const CorridorShape& corridorShape,
+    vm::axis::type axis,
+    CorridorBendAngle angle,
+    CorridorBendDirection direction,
+    size_t segmentsPer45Degrees,
+    const std::string& textureName) const;
+
+  /**
+   * Creates a horizontal T connector with three open ends. The stem begins on the
+   * minimum plane of `axis`, and the crossbar spans the other horizontal axis at the
+   * maximum end of the stem. `corridorWidth` is shared by all three openings.
+   */
+  Result<std::vector<Brush>> createCorridorTJunction(
+    const vm::bbox3d& bounds,
+    const CorridorShape& corridorShape,
+    vm::axis::type axis,
+    double corridorWidth,
+    const std::string& textureName) const;
+
+  /**
+   * Creates a room shell with a non-rectangular horizontal footprint. The shell has a
+   * floor slab, inset perimeter walls, and either a flat, barrel-vaulted, or raised-spine
+   * ceiling. `axis` points from the centered entrance toward the far end of the chamber.
+   */
+  Result<std::vector<Brush>> createChamberShell(
+    const vm::bbox3d& bounds,
+    const ChamberShape& chamberShape,
     vm::axis::type axis,
     const std::string& textureName) const;
 

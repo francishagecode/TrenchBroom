@@ -476,6 +476,198 @@ TEST_CASE("DrawShapeToolArchExtension")
   }
 }
 
+TEST_CASE("DrawShapeToolCorridorExtension")
+{
+  auto fixture = MapDocumentFixture{};
+  auto& document = fixture.create();
+  auto extension = DrawShapeToolCorridorExtension{document};
+  auto parameters = DrawShapeToolParameters{};
+
+  SECTION("createBrushes wires corridor-specific parameters to the brush builder")
+  {
+    const auto bounds = vm::bbox3d{{-128, -128, 0}, {128, 128, 160}};
+
+    extension.createBrushes(bounds, parameters)
+      | kdl::transform([&](const auto& brushes) {
+          CHECK(brushes.size() == 24u);
+          CHECK(
+            kdl::fold_left_first(
+              brushes
+                | std::views::transform([](const auto& brush) { return brush.bounds(); }),
+              [](const auto& lhs, const auto& rhs) { return vm::merge(lhs, rhs); })
+            == bounds);
+        })
+      | kdl::transform_error([](const auto& e) { FAIL(e); });
+  }
+
+  SECTION("One grid unit drag preview")
+  {
+    const auto dragBounds = vm::bbox3d{{0, 0, 0}, {16, 16, 16}};
+    extension.createBrushes(dragBounds, parameters)
+      | kdl::transform([&](const auto& brushes) {
+          REQUIRE(!brushes.empty());
+          CHECK(
+            kdl::fold_left_first(
+              brushes
+                | std::views::transform([](const auto& brush) { return brush.bounds(); }),
+              [](const auto& lhs, const auto& rhs) { return vm::merge(lhs, rhs); })
+            == dragBounds);
+        })
+      | kdl::transform_error([](const auto& e) { FAIL(e); });
+  }
+
+  CHECK(extension.name() == "Corridor");
+  CHECK(extension.iconPath() == "ShapeTool_Corridor.svg");
+}
+
+TEST_CASE("DrawShapeToolCorridorBendExtension")
+{
+  auto fixture = MapDocumentFixture{};
+  auto& document = fixture.create();
+  auto extension = DrawShapeToolCorridorBendExtension{document};
+  auto parameters = DrawShapeToolParameters{};
+  const auto bounds = vm::bbox3d{{-256, -128, 0}, {256, 128, 160}};
+
+  SECTION("45 degree bend")
+  {
+    extension.createBrushes(bounds, parameters)
+      | kdl::transform([&](const auto& brushes) { CHECK(brushes.size() == 72u); })
+      | kdl::transform_error([](const auto& e) { FAIL(e); });
+  }
+
+  SECTION("90 degree bend")
+  {
+    parameters.setCorridorBendAngle(mdl::CorridorBendAngle::Deg90);
+    parameters.setCorridorBendDirection(mdl::CorridorBendDirection::Right);
+    extension.createBrushes(bounds, parameters)
+      | kdl::transform([&](const auto& brushes) { CHECK(brushes.size() == 144u); })
+      | kdl::transform_error([](const auto& e) { FAIL(e); });
+  }
+
+
+  SECTION("One grid unit drag previews")
+  {
+    const auto dragBounds = vm::bbox3d{{0, 0, 0}, {16, 16, 16}};
+    for (const auto angle :
+         {mdl::CorridorBendAngle::Deg45, mdl::CorridorBendAngle::Deg90})
+    {
+      CAPTURE(angle);
+      parameters.setCorridorBendAngle(angle);
+      extension.createBrushes(dragBounds, parameters)
+        | kdl::transform([&](const auto& brushes) {
+            REQUIRE(!brushes.empty());
+            CHECK(std::ranges::all_of(brushes, [](const auto& brush) {
+              return brush.fullySpecified();
+            }));
+          })
+        | kdl::transform_error([](const auto& e) { FAIL(e); });
+    }
+  }
+
+  CHECK(extension.name() == "Corridor Bend");
+  CHECK(extension.iconPath() == "ShapeTool_CorridorBend.svg");
+}
+
+TEST_CASE("DrawShapeToolCorridorTJunctionExtension")
+{
+  auto fixture = MapDocumentFixture{};
+  auto& document = fixture.create();
+  auto extension = DrawShapeToolCorridorTJunctionExtension{document};
+  auto parameters = DrawShapeToolParameters{};
+  const auto bounds = vm::bbox3d{{-256, -384, 0}, {256, 384, 160}};
+
+  extension.createBrushes(bounds, parameters) | kdl::transform([&](const auto& brushes) {
+    CHECK(brushes.size() == 87u);
+    CHECK(
+      kdl::fold_left_first(
+        brushes | std::views::transform([](const auto& brush) { return brush.bounds(); }),
+        [](const auto& lhs, const auto& rhs) { return vm::merge(lhs, rhs); })
+      == bounds);
+  }) | kdl::transform_error([](const auto& e) { FAIL(e); });
+
+  SECTION("One grid unit drag preview")
+  {
+    const auto dragBounds = vm::bbox3d{{0, 0, 0}, {16, 16, 16}};
+    extension.createBrushes(dragBounds, parameters)
+      | kdl::transform([&](const auto& brushes) {
+          REQUIRE(!brushes.empty());
+          CHECK(
+            kdl::fold_left_first(
+              brushes
+                | std::views::transform([](const auto& brush) { return brush.bounds(); }),
+              [](const auto& lhs, const auto& rhs) { return vm::merge(lhs, rhs); })
+            == dragBounds);
+        })
+      | kdl::transform_error([](const auto& e) { FAIL(e); });
+  }
+
+  CHECK(extension.name() == "Corridor T");
+  CHECK(extension.iconPath() == "ShapeTool_CorridorT.svg");
+}
+
+TEST_CASE("DrawShapeToolChamberExtension")
+{
+  auto fixture = MapDocumentFixture{};
+  auto& document = fixture.create();
+  auto extension = DrawShapeToolChamberExtension{document};
+  auto parameters = DrawShapeToolParameters{};
+  const auto bounds = vm::bbox3d{{-384, -256, 0}, {384, 256, 256}};
+
+  SECTION("Default chamfered chamber")
+  {
+    extension.createBrushes(bounds, parameters)
+      | kdl::transform([&](const auto& brushes) {
+          CHECK(brushes.size() == 12u);
+          CHECK(
+            kdl::fold_left_first(
+              brushes
+                | std::views::transform([](const auto& brush) { return brush.bounds(); }),
+              [](const auto& lhs, const auto& rhs) { return vm::merge(lhs, rhs); })
+            == bounds);
+        })
+      | kdl::transform_error([](const auto& e) { FAIL(e); });
+  }
+
+  SECTION("Apse with barrel vault")
+  {
+    auto shape = parameters.chamberShape();
+    shape.footprint = mdl::ChamberFootprint::Apse;
+    shape.ceiling = mdl::ChamberCeiling::BarrelVault;
+    parameters.setChamberShape(shape);
+
+    extension.createBrushes(bounds, parameters)
+      | kdl::transform([&](const auto& brushes) {
+          CHECK(brushes.size() == 20u);
+          CHECK(
+            kdl::fold_left_first(
+              brushes
+                | std::views::transform([](const auto& brush) { return brush.bounds(); }),
+              [](const auto& lhs, const auto& rhs) { return vm::merge(lhs, rhs); })
+            == bounds);
+        })
+      | kdl::transform_error([](const auto& e) { FAIL(e); });
+  }
+
+  SECTION("One grid unit drag preview")
+  {
+    const auto dragBounds = vm::bbox3d{{0, 0, 0}, {16, 16, 16}};
+    extension.createBrushes(dragBounds, parameters)
+      | kdl::transform([&](const auto& brushes) {
+          REQUIRE(!brushes.empty());
+          CHECK(
+            kdl::fold_left_first(
+              brushes
+                | std::views::transform([](const auto& brush) { return brush.bounds(); }),
+              [](const auto& lhs, const auto& rhs) { return vm::merge(lhs, rhs); })
+            == dragBounds);
+        })
+      | kdl::transform_error([](const auto& e) { FAIL(e); });
+  }
+
+  CHECK(extension.name() == "Chamber");
+  CHECK(extension.iconPath() == "ShapeTool_Chamber.svg");
+}
+
 TEST_CASE("DrawShapeToolParameters")
 {
   auto parameters = DrawShapeToolParameters{};
@@ -489,6 +681,37 @@ TEST_CASE("DrawShapeToolParameters")
     REQUIRE(parameters.accuracy() == 1);
     REQUIRE(parameters.stepHeight() == 16.0);
     REQUIRE(parameters.stairDirection() == DrawShapeToolParameters::StairDirection::PosX);
+    REQUIRE(parameters.corridorAxis() == vm::axis::x);
+    REQUIRE(
+      parameters.corridorShape()
+      == mdl::CorridorShape{
+        .wallThickness = 16.0,
+        .cornerRadius = 32.0,
+        .cornerSegments = 2u,
+        .ceilingRecessWidth = 64.0,
+        .ceilingRecessDepth = 8.0,
+        .sideRecessHeight = 48.0,
+        .sideRecessDepth = 8.0,
+      });
+    REQUIRE(parameters.corridorBendAngle() == mdl::CorridorBendAngle::Deg45);
+    REQUIRE(parameters.corridorBendDirection() == mdl::CorridorBendDirection::Left);
+    REQUIRE(parameters.corridorBendSegments() == 3u);
+    REQUIRE(parameters.corridorJunctionWidth() == 256.0);
+    REQUIRE(parameters.chamberAxis() == vm::axis::x);
+    REQUIRE(
+      parameters.chamberShape()
+      == mdl::ChamberShape{
+        .footprint = mdl::ChamberFootprint::Chamfered,
+        .ceiling = mdl::ChamberCeiling::Flat,
+        .wallThickness = 16.0,
+        .cornerSize = 64.0,
+        .footprintSegments = 3u,
+        .ceilingRise = 64.0,
+        .ceilingSegments = 4u,
+        .openEntrance = true,
+        .entranceWidth = 224.0,
+        .entranceHeight = 128.0,
+      });
   }
 
   SECTION("Axis modifications")
@@ -611,6 +834,101 @@ TEST_CASE("DrawShapeToolParameters")
 
     parameters.setStairDirection(DrawShapeToolParameters::StairDirection::PosY);
     REQUIRE(parameters.stairDirection() == DrawShapeToolParameters::StairDirection::PosY);
+    CHECK(parametersDidChange.notifications.size() == 2u);
+  }
+
+  SECTION("Corridor axis modifications")
+  {
+    auto parametersDidChange = Observer<>{parameters.parametersDidChangeNotifier};
+
+    parameters.setCorridorAxis(vm::axis::x);
+    CHECK(parametersDidChange.notifications.empty());
+
+    parameters.setCorridorAxis(vm::axis::y);
+    REQUIRE(parameters.corridorAxis() == vm::axis::y);
+    CHECK(parametersDidChange.notifications.size() == 1u);
+
+    parameters.setCorridorAxis(vm::axis::y);
+    CHECK(parametersDidChange.notifications.size() == 1u);
+  }
+
+  SECTION("Corridor shape modifications")
+  {
+    auto parametersDidChange = Observer<>{parameters.parametersDidChangeNotifier};
+
+    const auto defaultShape = parameters.corridorShape();
+    parameters.setCorridorShape(defaultShape);
+    CHECK(parametersDidChange.notifications.empty());
+
+    auto changedShape = defaultShape;
+    changedShape.cornerRadius = 48.0;
+    changedShape.cornerSegments = 3u;
+    parameters.setCorridorShape(changedShape);
+    REQUIRE(parameters.corridorShape() == changedShape);
+    CHECK(parametersDidChange.notifications.size() == 1u);
+
+    parameters.setCorridorShape(changedShape);
+    CHECK(parametersDidChange.notifications.size() == 1u);
+  }
+
+  SECTION("Corridor connector modifications")
+  {
+    auto parametersDidChange = Observer<>{parameters.parametersDidChangeNotifier};
+
+    parameters.setCorridorBendAngle(mdl::CorridorBendAngle::Deg45);
+    parameters.setCorridorBendDirection(mdl::CorridorBendDirection::Left);
+    parameters.setCorridorBendSegments(3u);
+    parameters.setCorridorJunctionWidth(256.0);
+    CHECK(parametersDidChange.notifications.empty());
+
+    parameters.setCorridorBendAngle(mdl::CorridorBendAngle::Deg90);
+    REQUIRE(parameters.corridorBendAngle() == mdl::CorridorBendAngle::Deg90);
+    CHECK(parametersDidChange.notifications.size() == 1u);
+
+    parameters.setCorridorBendDirection(mdl::CorridorBendDirection::Right);
+    REQUIRE(parameters.corridorBendDirection() == mdl::CorridorBendDirection::Right);
+    CHECK(parametersDidChange.notifications.size() == 2u);
+
+    parameters.setCorridorBendSegments(5u);
+    REQUIRE(parameters.corridorBendSegments() == 5u);
+    CHECK(parametersDidChange.notifications.size() == 3u);
+
+    parameters.setCorridorJunctionWidth(320.0);
+    REQUIRE(parameters.corridorJunctionWidth() == 320.0);
+    CHECK(parametersDidChange.notifications.size() == 4u);
+
+    parameters.setCorridorJunctionWidth(1.0);
+    REQUIRE(parameters.corridorJunctionWidth() == 1.0);
+    CHECK(parametersDidChange.notifications.size() == 5u);
+
+    auto thickShape = parameters.corridorShape();
+    thickShape.wallThickness = 32.0;
+    parameters.setCorridorShape(thickShape);
+    REQUIRE(parameters.corridorJunctionWidth() == 1.0);
+    CHECK(parametersDidChange.notifications.size() == 6u);
+  }
+
+  SECTION("Chamber modifications")
+  {
+    auto parametersDidChange = Observer<>{parameters.parametersDidChangeNotifier};
+
+    parameters.setChamberAxis(vm::axis::x);
+    parameters.setChamberShape(parameters.chamberShape());
+    CHECK(parametersDidChange.notifications.empty());
+
+    parameters.setChamberAxis(vm::axis::y);
+    REQUIRE(parameters.chamberAxis() == vm::axis::y);
+    CHECK(parametersDidChange.notifications.size() == 1u);
+
+    auto shape = parameters.chamberShape();
+    shape.footprint = mdl::ChamberFootprint::Apse;
+    shape.ceiling = mdl::ChamberCeiling::BarrelVault;
+    shape.ceilingRise = 96.0;
+    parameters.setChamberShape(shape);
+    REQUIRE(parameters.chamberShape() == shape);
+    CHECK(parametersDidChange.notifications.size() == 2u);
+
+    parameters.setChamberShape(shape);
     CHECK(parametersDidChange.notifications.size() == 2u);
   }
 

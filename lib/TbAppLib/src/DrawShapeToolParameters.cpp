@@ -19,6 +19,8 @@
 
 #include "ui/DrawShapeToolParameters.h"
 
+#include <algorithm>
+
 namespace tb::ui
 {
 
@@ -130,6 +132,120 @@ void DrawShapeToolParameters::setStairDirection(const StairDirection stairDirect
   if (stairDirection != m_stairDirection)
   {
     m_stairDirection = stairDirection;
+    parametersDidChangeNotifier();
+  }
+}
+
+vm::axis::type DrawShapeToolParameters::corridorAxis() const
+{
+  return m_corridorAxis;
+}
+
+void DrawShapeToolParameters::setCorridorAxis(const vm::axis::type axis)
+{
+  if (axis != m_corridorAxis)
+  {
+    m_corridorAxis = axis;
+    parametersDidChangeNotifier();
+  }
+}
+
+const mdl::CorridorShape& DrawShapeToolParameters::corridorShape() const
+{
+  return m_corridorShape;
+}
+
+void DrawShapeToolParameters::setCorridorShape(mdl::CorridorShape corridorShape)
+{
+  if (corridorShape != m_corridorShape)
+  {
+    m_corridorShape = std::move(corridorShape);
+    parametersDidChangeNotifier();
+  }
+}
+
+mdl::CorridorBendAngle DrawShapeToolParameters::corridorBendAngle() const
+{
+  return m_corridorBendAngle;
+}
+
+void DrawShapeToolParameters::setCorridorBendAngle(const mdl::CorridorBendAngle angle)
+{
+  if (angle != m_corridorBendAngle)
+  {
+    m_corridorBendAngle = angle;
+    parametersDidChangeNotifier();
+  }
+}
+
+mdl::CorridorBendDirection DrawShapeToolParameters::corridorBendDirection() const
+{
+  return m_corridorBendDirection;
+}
+
+void DrawShapeToolParameters::setCorridorBendDirection(
+  const mdl::CorridorBendDirection direction)
+{
+  if (direction != m_corridorBendDirection)
+  {
+    m_corridorBendDirection = direction;
+    parametersDidChangeNotifier();
+  }
+}
+
+size_t DrawShapeToolParameters::corridorBendSegments() const
+{
+  return m_corridorBendSegments;
+}
+
+void DrawShapeToolParameters::setCorridorBendSegments(const size_t segments)
+{
+  if (segments != m_corridorBendSegments)
+  {
+    m_corridorBendSegments = segments;
+    parametersDidChangeNotifier();
+  }
+}
+
+double DrawShapeToolParameters::corridorJunctionWidth() const
+{
+  return m_corridorJunctionWidth;
+}
+
+void DrawShapeToolParameters::setCorridorJunctionWidth(const double width)
+{
+  const auto clampedWidth = std::max(width, 0.001);
+  if (clampedWidth != m_corridorJunctionWidth)
+  {
+    m_corridorJunctionWidth = clampedWidth;
+    parametersDidChangeNotifier();
+  }
+}
+
+vm::axis::type DrawShapeToolParameters::chamberAxis() const
+{
+  return m_chamberAxis;
+}
+
+void DrawShapeToolParameters::setChamberAxis(const vm::axis::type axis)
+{
+  if (axis != m_chamberAxis)
+  {
+    m_chamberAxis = axis;
+    parametersDidChangeNotifier();
+  }
+}
+
+const mdl::ChamberShape& DrawShapeToolParameters::chamberShape() const
+{
+  return m_chamberShape;
+}
+
+void DrawShapeToolParameters::setChamberShape(mdl::ChamberShape chamberShape)
+{
+  if (chamberShape != m_chamberShape)
+  {
+    m_chamberShape = std::move(chamberShape);
     parametersDidChangeNotifier();
   }
 }

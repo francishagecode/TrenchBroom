@@ -57,6 +57,37 @@ private:
   double m_stepHeight = 16.0;
   StairDirection m_stairDirection = StairDirection::PosX;
 
+  // For corridor shapes
+  vm::axis::type m_corridorAxis = vm::axis::x;
+  mdl::CorridorShape m_corridorShape{
+    .wallThickness = 16.0,
+    .cornerRadius = 32.0,
+    .cornerSegments = 2u,
+    .ceilingRecessWidth = 64.0,
+    .ceilingRecessDepth = 8.0,
+    .sideRecessHeight = 48.0,
+    .sideRecessDepth = 8.0,
+  };
+  mdl::CorridorBendAngle m_corridorBendAngle = mdl::CorridorBendAngle::Deg45;
+  mdl::CorridorBendDirection m_corridorBendDirection = mdl::CorridorBendDirection::Left;
+  size_t m_corridorBendSegments = 3u;
+  double m_corridorJunctionWidth = 256.0;
+
+  // For chamber shells
+  vm::axis::type m_chamberAxis = vm::axis::x;
+  mdl::ChamberShape m_chamberShape{
+    .footprint = mdl::ChamberFootprint::Chamfered,
+    .ceiling = mdl::ChamberCeiling::Flat,
+    .wallThickness = 16.0,
+    .cornerSize = 64.0,
+    .footprintSegments = 3u,
+    .ceilingRise = 64.0,
+    .ceilingSegments = 4u,
+    .openEntrance = true,
+    .entranceWidth = 224.0,
+    .entranceHeight = 128.0,
+  };
+
 public:
   Notifier<> parametersDidChangeNotifier;
 
@@ -83,6 +114,30 @@ public:
 
   StairDirection stairDirection() const;
   void setStairDirection(StairDirection stairDirection);
+
+  vm::axis::type corridorAxis() const;
+  void setCorridorAxis(vm::axis::type axis);
+
+  const mdl::CorridorShape& corridorShape() const;
+  void setCorridorShape(mdl::CorridorShape corridorShape);
+
+  mdl::CorridorBendAngle corridorBendAngle() const;
+  void setCorridorBendAngle(mdl::CorridorBendAngle angle);
+
+  mdl::CorridorBendDirection corridorBendDirection() const;
+  void setCorridorBendDirection(mdl::CorridorBendDirection direction);
+
+  size_t corridorBendSegments() const;
+  void setCorridorBendSegments(size_t segments);
+
+  double corridorJunctionWidth() const;
+  void setCorridorJunctionWidth(double width);
+
+  vm::axis::type chamberAxis() const;
+  void setChamberAxis(vm::axis::type axis);
+
+  const mdl::ChamberShape& chamberShape() const;
+  void setChamberShape(mdl::ChamberShape chamberShape);
 };
 
 } // namespace tb::ui

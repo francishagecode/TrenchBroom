@@ -138,6 +138,74 @@ private:
   Q_OBJECT
 };
 
+class DrawShapeToolCorridorProfileExtensionPage : public DrawShapeToolExtensionPage
+{
+public:
+  explicit DrawShapeToolCorridorProfileExtensionPage(
+    MapDocument& document,
+    DrawShapeToolParameters& parameters,
+    bool horizontalOnly,
+    QWidget* parent = nullptr);
+
+protected:
+  DrawShapeToolParameters& m_parameters;
+
+  Q_OBJECT
+};
+
+class DrawShapeToolCorridorShapeExtensionPage
+  : public DrawShapeToolCorridorProfileExtensionPage
+{
+public:
+  explicit DrawShapeToolCorridorShapeExtensionPage(
+    MapDocument& document,
+    DrawShapeToolParameters& parameters,
+    QWidget* parent = nullptr);
+
+private:
+  Q_OBJECT
+};
+
+class DrawShapeToolCorridorBendExtensionPage
+  : public DrawShapeToolCorridorProfileExtensionPage
+{
+public:
+  explicit DrawShapeToolCorridorBendExtensionPage(
+    MapDocument& document,
+    DrawShapeToolParameters& parameters,
+    QWidget* parent = nullptr);
+
+private:
+  Q_OBJECT
+};
+
+class DrawShapeToolCorridorTJunctionExtensionPage
+  : public DrawShapeToolCorridorProfileExtensionPage
+{
+public:
+  explicit DrawShapeToolCorridorTJunctionExtensionPage(
+    MapDocument& document,
+    DrawShapeToolParameters& parameters,
+    QWidget* parent = nullptr);
+
+private:
+  Q_OBJECT
+};
+
+class DrawShapeToolChamberExtensionPage : public DrawShapeToolExtensionPage
+{
+public:
+  explicit DrawShapeToolChamberExtensionPage(
+    MapDocument& document,
+    DrawShapeToolParameters& parameters,
+    QWidget* parent = nullptr);
+
+private:
+  DrawShapeToolParameters& m_parameters;
+
+  Q_OBJECT
+};
+
 std::vector<DrawShapeToolExtensionPage*> createDrawShapeToolExtensionPages(
   MapDocument& document, DrawShapeToolParameters& parameters, QWidget* parent = nullptr);
 
