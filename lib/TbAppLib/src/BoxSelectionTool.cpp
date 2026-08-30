@@ -20,6 +20,7 @@
 #include "ui/BoxSelectionTool.h"
 
 #include "base/Logger.h"
+#include "gl/Camera.h"
 #include "mdl/BrushBuilder.h"
 #include "mdl/BrushFace.h"
 #include "mdl/BrushNode.h"
@@ -28,12 +29,18 @@
 #include "mdl/Map_Selection.h"
 #include "mdl/ModelUtils.h"
 #include "mdl/Node.h"
+#include "mdl/Polyhedron3.h"
 #include "mdl/Transaction.h"
 #include "mdl/WorldNode.h"
 #include "ui/MapDocument.h"
 
 #include "kd/result.h"
 
+#include "vm/plane.h"
+#include "vm/ray.h"
+
+#include <array>
+#include <optional>
 #include <unordered_set>
 #include <vector>
 
@@ -98,6 +105,62 @@ void applySelection(
   transaction.commit();
 }
 
+std::optional<mdl::Polyhedron3> createSelectionPolyhedron(
+  const gl::Camera& camera, const vm::bbox2d& screenBounds, const vm::bbox3d& worldBounds)
+{
+  if (screenBounds.is_empty())
+  {
+    return std::nullopt;
+  }
+
+  const auto worldVertices = worldBounds.vertices();
+  auto polyhedron =
+    mdl::Polyhedron3{std::vector<vm::vec3d>{worldVertices.begin(), worldVertices.end()}};
+
+  const auto min = screenBounds.min;
+  const auto max = screenBounds.max;
+  const auto cornerRays = std::array{
+    vm::ray3d{camera.pickRay(float(min.x()), float(min.y()))},
+    vm::ray3d{camera.pickRay(float(max.x()), float(min.y()))},
+    vm::ray3d{camera.pickRay(float(max.x()), float(max.y()))},
+    vm::ray3d{camera.pickRay(float(min.x()), float(max.y()))},
+  };
+  const auto centerRay = vm::ray3d{
+    camera.pickRay(float((min.x() + max.x()) / 2.0), float((min.y() + max.y()) / 2.0))};
+  const auto centerPoint = vm::point_at_distance(centerRay, 1.0);
+  const auto cameraPosition = vm::vec3d{camera.position()};
+
+  for (size_t i = 0u; i < cornerRays.size(); ++i)
+  {
+    auto plane = vm::from_points(
+      cameraPosition,
+      vm::point_at_distance(cornerRays[i], 1.0),
+      vm::point_at_distance(cornerRays[(i + 1u) % cornerRays.size()], 1.0));
+    if (!plane)
+    {
+      return std::nullopt;
+    }
+    if (plane->point_distance(centerPoint) > 0.0)
+    {
+      plane = vm::plane3d{-plane->distance, -plane->normal};
+    }
+    if (polyhedron.clip(*plane).empty())
+    {
+      return std::nullopt;
+    }
+  }
+
+  const auto nearPlane = vm::plane3d{
+    cameraPosition + double(camera.nearPlane()) * vm::vec3d{camera.direction()},
+    -vm::vec3d{camera.direction()}};
+  if (polyhedron.clip(nearPlane).empty())
+  {
+    return std::nullopt;
+  }
+
+  return polyhedron;
+}
+
 } // namespace
 
 BoxSelectionTool::BoxSelectionTool(MapDocument& document)
@@ -132,6 +195,34 @@ void BoxSelectionTool::select(
       })
     | kdl::transform_error([&](auto e) {
         m_document.logger().error() << "Could not create box selection volume: " << e;
+      });
+}
+
+void BoxSelectionTool::select(
+  const gl::Camera& camera,
+  const vm::bbox2d& screenBounds,
+  const BoxSelectionBoundsMode boundsMode,
+  const BoxSelectionMode selectionMode)
+{
+  auto& map = m_document.map();
+  const auto selectionPolyhedron =
+    createSelectionPolyhedron(camera, screenBounds, map.worldBounds().expand(-1.0));
+  if (!selectionPolyhedron)
+  {
+    applySelection(map, {}, selectionMode);
+    return;
+  }
+
+  auto builder = mdl::BrushBuilder{map.worldNode().mapFormat(), map.worldBounds()};
+  builder.createBrush(*selectionPolyhedron, mdl::BrushFace::NoMaterialName)
+    | kdl::transform([&](auto brush) {
+        const auto selectionVolume = mdl::BrushNode{std::move(brush)};
+        applySelection(
+          map, collectNodes(map, selectionVolume, boundsMode), selectionMode);
+      })
+    | kdl::transform_error([&](auto e) {
+        m_document.logger().error()
+          << "Could not create projected box selection volume: " << e;
       });
 }
 

@@ -28,13 +28,13 @@ namespace tb::ui
 class BoxSelectionTool;
 class GestureTracker;
 
-class BoxSelectionToolController2D : public ToolController
+class BoxSelectionToolController : public ToolController
 {
 private:
   BoxSelectionTool& m_tool;
 
 public:
-  explicit BoxSelectionToolController2D(BoxSelectionTool& tool);
+  explicit BoxSelectionToolController(BoxSelectionTool& tool);
 
 private:
   Tool& tool() override;

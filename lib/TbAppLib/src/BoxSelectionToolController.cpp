@@ -17,7 +17,7 @@
  along with TrenchBroom. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "ui/BoxSelectionToolController2D.h"
+#include "ui/BoxSelectionToolController.h"
 
 #include "gl/Camera.h"
 #include "render/RenderBatch.h"
@@ -28,6 +28,8 @@
 #include "ui/Lasso.h"
 
 #include "vm/bbox.h"
+#include "vm/intersection.h"
+#include "vm/plane.h"
 #include "vm/vec.h"
 
 namespace tb::ui
@@ -57,8 +59,8 @@ private:
   const gl::Camera& m_camera;
   const vm::vec3d m_startPoint;
   vm::vec3d m_currentPoint;
-  const float m_startMouseX;
-  float m_currentMouseX;
+  const vm::vec2d m_startMouse;
+  vm::vec2d m_currentMouse;
   Lasso m_lasso;
 
 public:
@@ -67,17 +69,17 @@ public:
     , m_camera{inputState.camera()}
     , m_startPoint{inputState.defaultPointUnderMouse()}
     , m_currentPoint{m_startPoint}
-    , m_startMouseX{inputState.mouseX()}
-    , m_currentMouseX{m_startMouseX}
-    , m_lasso{m_camera, LassoDistance, m_startPoint}
+    , m_startMouse{inputState.mouseX(), inputState.mouseY()}
+    , m_currentMouse{m_startMouse}
+    , m_lasso{m_camera, LassoDistance, lassoPoint(inputState)}
   {
   }
 
   bool update(const InputState& inputState) override
   {
     m_currentPoint = inputState.defaultPointUnderMouse();
-    m_currentMouseX = inputState.mouseX();
-    m_lasso.update(m_currentPoint);
+    m_currentMouse = {inputState.mouseX(), inputState.mouseY()};
+    m_lasso.update(lassoPoint(inputState));
     m_tool.refreshViews();
     return true;
   }
@@ -85,7 +87,14 @@ public:
   void end(const InputState& inputState) override
   {
     update(inputState);
-    m_tool.select(selectionBounds(), boundsMode(), selectionMode(inputState));
+    if (m_camera.perspectiveProjection())
+    {
+      m_tool.select(m_camera, screenBounds(), boundsMode(), selectionMode(inputState));
+    }
+    else
+    {
+      m_tool.select(worldBounds(), boundsMode(), selectionMode(inputState));
+    }
   }
 
   void cancel() override { m_tool.refreshViews(); }
@@ -116,13 +125,36 @@ public:
   }
 
 private:
-  BoxSelectionBoundsMode boundsMode() const
+  static vm::vec3d lassoPoint(const InputState& inputState)
   {
-    return m_currentMouseX < m_startMouseX ? BoxSelectionBoundsMode::Intersect
-                                           : BoxSelectionBoundsMode::Contain;
+    if (inputState.camera().orthographicProjection())
+    {
+      return inputState.defaultPointUnderMouse();
+    }
+
+    const auto plane = vm::plane3d{
+      vm::vec3d{inputState.camera().defaultPoint(float(LassoDistance))},
+      vm::vec3d{inputState.camera().direction()}};
+    const auto& ray = inputState.pickRay();
+    if (const auto distance = vm::intersect_ray_plane(ray, plane))
+    {
+      return vm::point_at_distance(ray, *distance);
+    }
+    return inputState.defaultPointUnderMouse();
   }
 
-  vm::bbox3d selectionBounds() const
+  BoxSelectionBoundsMode boundsMode() const
+  {
+    return m_currentMouse.x() < m_startMouse.x() ? BoxSelectionBoundsMode::Intersect
+                                                 : BoxSelectionBoundsMode::Contain;
+  }
+
+  vm::bbox2d screenBounds() const
+  {
+    return {vm::min(m_startMouse, m_currentMouse), vm::max(m_startMouse, m_currentMouse)};
+  }
+
+  vm::bbox3d worldBounds() const
   {
     auto min = vm::min(m_startPoint, m_currentPoint);
     auto max = vm::max(m_startPoint, m_currentPoint);
@@ -138,27 +170,25 @@ private:
 
 } // namespace
 
-BoxSelectionToolController2D::BoxSelectionToolController2D(BoxSelectionTool& tool)
+BoxSelectionToolController::BoxSelectionToolController(BoxSelectionTool& tool)
   : m_tool{tool}
 {
 }
 
-Tool& BoxSelectionToolController2D::tool()
+Tool& BoxSelectionToolController::tool()
 {
   return m_tool;
 }
 
-const Tool& BoxSelectionToolController2D::tool() const
+const Tool& BoxSelectionToolController::tool() const
 {
   return m_tool;
 }
 
-std::unique_ptr<GestureTracker> BoxSelectionToolController2D::acceptMouseDrag(
+std::unique_ptr<GestureTracker> BoxSelectionToolController::acceptMouseDrag(
   const InputState& inputState)
 {
-  if (
-    !inputState.mouseButtonsPressed(MouseButtons::Left)
-    || !inputState.camera().orthographicProjection())
+  if (!inputState.mouseButtonsPressed(MouseButtons::Left))
   {
     return nullptr;
   }

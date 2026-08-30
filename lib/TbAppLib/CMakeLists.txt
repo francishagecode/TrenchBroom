@@ -7,7 +7,7 @@ target_sources(TbAppLib
     ${CMAKE_CURRENT_SOURCE_DIR}/src/AssembleBrushTool.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/AssembleBrushToolController3D.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/BoxSelectionTool.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/BoxSelectionToolController2D.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/BoxSelectionToolController.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/CameraAnimation.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/CameraLinkHelper.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/CameraTool2D.cpp
@@ -77,7 +77,7 @@ target_sources(TbAppLib
       ${CMAKE_CURRENT_SOURCE_DIR}/include/ui/AssembleBrushTool.h
       ${CMAKE_CURRENT_SOURCE_DIR}/include/ui/AssembleBrushToolController3D.h
       ${CMAKE_CURRENT_SOURCE_DIR}/include/ui/BoxSelectionTool.h
-      ${CMAKE_CURRENT_SOURCE_DIR}/include/ui/BoxSelectionToolController2D.h
+      ${CMAKE_CURRENT_SOURCE_DIR}/include/ui/BoxSelectionToolController.h
       ${CMAKE_CURRENT_SOURCE_DIR}/include/ui/BrushHandleToolBase.h
       ${CMAKE_CURRENT_SOURCE_DIR}/include/ui/CameraAnimation.h
       ${CMAKE_CURRENT_SOURCE_DIR}/include/ui/CameraLinkHelper.h

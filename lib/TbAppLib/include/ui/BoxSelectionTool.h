@@ -23,6 +23,11 @@
 
 #include "vm/bbox.h"
 
+namespace tb::gl
+{
+class Camera;
+}
+
 namespace tb::ui
 {
 class MapDocument;
@@ -52,6 +57,11 @@ public:
 
   void select(
     const vm::bbox3d& bounds,
+    BoxSelectionBoundsMode boundsMode,
+    BoxSelectionMode selectionMode);
+  void select(
+    const gl::Camera& camera,
+    const vm::bbox2d& screenBounds,
     BoxSelectionBoundsMode boundsMode,
     BoxSelectionMode selectionMode);
 };

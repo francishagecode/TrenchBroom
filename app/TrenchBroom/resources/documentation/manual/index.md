@@ -248,7 +248,7 @@ In the 3D viewport, you can only select the frontmost object with the mouse. To 
 
 In a 2D viewport, you can also left click an object to select it. But unlike in the 3D viewport, this will not necessarily select the frontmost object. Instead, TrenchBroom will analyze the objects under the mouse, specifically the faces under the mouse, and it will find the one with the smallest visible area. Having found such a face, it will select the object to which this face belongs. Since entities don't necessarily have faces, the faces of their bounding boxes will be considered instead. The advantage of this technique is that it allows you to easily select occluded objects in the 2D viewports.
 
-For larger areas in a 2D viewport, activate #menu(Menu/Edit/Tools/Box Select Tool) and drag a rectangle. Drag from left to right to select only objects completely enclosed by the rectangle, or from right to left to also select objects that cross its boundary. The rectangle extends through the full depth of the map, so objects are selected regardless of their distance from the viewport. With no modifier, the result replaces the current selection. Hold #key(Ctrl) to add objects or #key(Alt) to remove them. Hidden and locked objects are excluded.
+For larger areas, activate #menu(Menu/Edit/Tools/Box Select Tool) and drag a rectangle in any viewport. Drag from left to right to select only objects completely enclosed by the rectangle, or from right to left to also select objects that cross its boundary. The rectangle extends through the full depth of the current view, so it includes occluded objects behind the visible geometry. With no modifier, the result replaces the current selection. Hold #key(Ctrl) to add objects or #key(Alt) to remove them. Hidden and locked objects are excluded.
 
 You may also think of left click selection like this: In both the 3D viewport or a 2D viewport, TrenchBroom first compiles a set of candidate objects. These are all objects under the mouse. Then, it must choose an object to be selected from these candidates. In the 3D viewport, the frontmost object always wins (unless you're using the scroll wheel to drill the selection), and in a 2D view, the object with the smallest visible area wins. Other than that, selection behaves exactly the same in both viewports, that is, you can hold #key(Ctrl) to select multiple objects and so on.
 
@@ -328,7 +328,7 @@ Tool                  Viewports    Type          Purpose
 ----                  ---------    ----          -----------
 Camera Tool           2D, 3D       Permanent     Adjusting the 3D camera and the 2D viewports
 Selection Tool        2D, 3D       Permanent     Selecting objects and brush faces
-Box Select Tool       2D           Modal         Selecting objects in a dragged rectangular area
+Box Select Tool       2D, 3D       Modal         Selecting objects in a dragged rectangular area
 Simple Shape Tool     2D, 3D       Permanent*    Creating simple shapes
 Complex Shape Tool    3D           Modal         Creating arbitrarily shaped brushes
 Entity Drag Tool      2D, 3D       Permanent     Creating entities by drag and drop

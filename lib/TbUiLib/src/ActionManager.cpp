@@ -1422,9 +1422,9 @@ void ActionManager::createToolsMenu()
   toolsMenu.addItem(addAction(Action{
     "Menu/Edit/Tools/Box Select Tool",
     "Box Select Tool",
-    ActionContext::View2D | ActionContext::AnyOrNoSelection
+    ActionContext::AnyView | ActionContext::AnyOrNoSelection
       | ActionContext::AnyOrNoTool,
-    KeySequence{"Q"},
+    KeySequence{"Shift+Q"},
     [](auto& context) { context.mapWindow().toolBox().toggleBoxSelectionTool(); },
     [](const auto& context) {
       return context.hasDocument()

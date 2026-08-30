@@ -18,6 +18,7 @@
  */
 
 #include "gl/OrthographicCamera.h"
+#include "gl/PerspectiveCamera.h"
 #include "mdl/BrushBuilder.h"
 #include "mdl/BrushNode.h"
 #include "mdl/CatchConfig.h"
@@ -31,7 +32,7 @@
 #include "mdl/TestUtils.h"
 #include "mdl/WorldNode.h"
 #include "ui/BoxSelectionTool.h"
-#include "ui/BoxSelectionToolController2D.h"
+#include "ui/BoxSelectionToolController.h"
 #include "ui/GestureTracker.h"
 #include "ui/InputState.h"
 #include "ui/MapDocument.h"
@@ -42,6 +43,7 @@
 #include "kd/result.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_vector.hpp>
 
 namespace tb::ui
 {
@@ -73,6 +75,20 @@ InputState inputStateFor(
   auto inputState = InputState{mouseX, 0.0f};
   inputState.setPickRequest(
     PickRequest{vm::ray3d{rayOrigin, vm::vec3d{camera.direction()}}, camera});
+  inputState.setModifierKeys(modifiers);
+  inputState.mouseDown(MouseButtons::Left);
+  return inputState;
+}
+
+InputState inputStateFor(
+  const gl::PerspectiveCamera& camera,
+  const float mouseX,
+  const float mouseY,
+  const ModifierKeyState modifiers = ModifierKeys::None)
+{
+  auto inputState = InputState{mouseX, mouseY};
+  inputState.setPickRequest(
+    PickRequest{vm::ray3d{camera.pickRay(mouseX, mouseY)}, camera});
   inputState.setModifierKeys(modifiers);
   inputState.mouseDown(MouseButtons::Left);
   return inputState;
@@ -212,7 +228,7 @@ TEST_CASE("BoxSelectionTool")
       camera.moveTo(view.position);
       camera.setDirection(view.direction, view.up);
 
-      auto controllerImpl = BoxSelectionToolController2D{tool};
+      auto controllerImpl = BoxSelectionToolController{tool};
       auto& controller = static_cast<ToolController&>(controllerImpl);
 
       auto start = inputStateFor(camera, view.start, 0.0f);
@@ -232,7 +248,7 @@ TEST_CASE("BoxSelectionTool")
     camera.moveTo({0, 0, 256});
     camera.setDirection({0, 0, -1}, {0, 1, 0});
 
-    auto controllerImpl = BoxSelectionToolController2D{tool};
+    auto controllerImpl = BoxSelectionToolController{tool};
     auto& controller = static_cast<ToolController&>(controllerImpl);
 
     SECTION("left to right contains")
@@ -295,6 +311,46 @@ TEST_CASE("BoxSelectionTool")
       tracker->cancel();
 
       CHECK(map.selection() == makeNodeSelection(map, {outside}));
+    }
+  }
+
+  SECTION("3D controller selects through the view depth")
+  {
+    auto* behind = addBrush(map, {{-16, -16, -160}, {16, 16, -128}});
+    addBrush(map, {{-16, -16, 288}, {16, 16, 320}});
+
+    auto camera = gl::PerspectiveCamera{
+      90.0f, 1.0f, 4096.0f, {0, 0, 1024, 768}, {0, 0, 256}, {0, 0, -1}, {0, 1, 0}};
+    auto controllerImpl = BoxSelectionToolController{tool};
+    auto& controller = static_cast<ToolController&>(controllerImpl);
+
+    SECTION("left to right contains occluded objects")
+    {
+      auto start = inputStateFor(camera, 450.0f, 320.0f);
+      auto tracker = controller.acceptMouseDrag(start);
+      REQUIRE(tracker != nullptr);
+
+      auto end = inputStateFor(camera, 600.0f, 448.0f);
+      tracker->end(end);
+
+      CHECK_THAT(
+        map.selection().nodes,
+        Catch::Matchers::UnorderedEquals(std::vector<mdl::Node*>{inside, behind}));
+    }
+
+    SECTION("right to left intersects occluded objects")
+    {
+      auto start = inputStateFor(camera, 600.0f, 320.0f);
+      auto tracker = controller.acceptMouseDrag(start);
+      REQUIRE(tracker != nullptr);
+
+      auto end = inputStateFor(camera, 450.0f, 448.0f);
+      tracker->end(end);
+
+      CHECK_THAT(
+        map.selection().nodes,
+        Catch::Matchers::UnorderedEquals(
+          std::vector<mdl::Node*>{inside, crossing, behind}));
     }
   }
 }

@@ -44,6 +44,7 @@
 #include "render/SelectionBoundsRenderer.h"
 #include "ui/AnimationManager.h"
 #include "ui/AssembleBrushToolController3D.h"
+#include "ui/BoxSelectionToolController.h"
 #include "ui/CameraAnimation.h"
 #include "ui/CameraTool3D.h"
 #include "ui/ClipToolController.h"
@@ -109,6 +110,8 @@ void MapView3D::initializeCamera()
 void MapView3D::initializeToolChain(MapViewToolBox& toolBox)
 {
   addToolController(std::make_unique<CameraTool3D>(*m_camera));
+  addToolController(
+    std::make_unique<BoxSelectionToolController>(toolBox.boxSelectionTool()));
   addToolController(
     std::make_unique<MoveObjectsToolController>(toolBox.moveObjectsTool()));
   addToolController(std::make_unique<RotateToolController3D>(toolBox.rotateTool()));
