@@ -41,6 +41,7 @@ TEST_CASE("actionContextMatches")
       {ActionContext::AnyView,    ActionContext::View3D,  ActionContext::AnyView, true},
       {ActionContext::AnyView,    ActionContext::View3D,  ActionContext::AnyTool, false},
       {ActionContext::RotateTool, ActionContext::Any,     ActionContext::AnyTool, true},
+      {ActionContext::BoxSelectionTool, ActionContext::Any, ActionContext::AnyTool, true},
       {ActionContext::View3D,     ActionContext::AnyTool, ActionContext::AnyTool, false},
       // clang-format on
     }));

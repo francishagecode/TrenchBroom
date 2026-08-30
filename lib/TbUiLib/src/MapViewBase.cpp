@@ -919,7 +919,8 @@ ActionContext::Type MapViewBase::actionContext() const
 
   const auto viewContext = viewActionContext();
   const auto toolContext =
-    m_toolBox.assembleBrushToolActive()  ? ActionContext::AssembleBrushTool
+    m_toolBox.boxSelectionToolActive()    ? ActionContext::BoxSelectionTool
+    : m_toolBox.assembleBrushToolActive() ? ActionContext::AssembleBrushTool
     : m_toolBox.clipToolActive()         ? ActionContext::ClipTool
     : m_toolBox.anyVertexToolActive()    ? ActionContext::AnyVertexTool
     : m_toolBox.controlPointToolActive() ? ActionContext::ControlPointTool

@@ -19,6 +19,7 @@
 
 #pragma once
 
+#include "base/Color.h"
 
 #include "vm/bbox.h"
 #include "vm/plane.h"
@@ -94,6 +95,11 @@ private:
 public:
   void render(
     render::RenderContext& renderContext, render::RenderBatch& renderBatch) const;
+  void render(
+    render::RenderContext& renderContext,
+    render::RenderBatch& renderBatch,
+    const RgbaF& outlineColor,
+    const RgbaF& fillColor) const;
 
 private:
   vm::plane3d getPlane() const;
