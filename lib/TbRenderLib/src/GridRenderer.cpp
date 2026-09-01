@@ -55,6 +55,7 @@ void GridRenderer::render(RenderContext& renderContext)
     shader.set("Normal", -camera.direction());
     shader.set("RenderGrid", renderContext.showGrid());
     shader.set("GridSize", static_cast<float>(renderContext.gridSize()));
+    shader.set("WorldToGridMatrix", renderContext.worldToGridMatrix());
     shader.set("GridAlpha", pref(Preferences::GridAlpha));
     shader.set("GridColor", pref(Preferences::GridColor2D));
     shader.set("CameraZoom", camera.zoom());

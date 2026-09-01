@@ -25,6 +25,7 @@
 #include "mdl/Map.h"
 #include "mdl/PointTrace.h"
 #include "prefs/Preferences.h"
+#include "ui/AppController.h"
 #include "ui/FourPaneMapView.h"
 #include "ui/Inspector.h"
 #include "ui/MapDocument.h"
@@ -47,7 +48,11 @@ SwitchableMapViewContainer::SwitchableMapViewContainer(
   , m_appController{appController}
   , m_document{document}
   , m_mapViewBar{new MapViewBar(m_document)}
-  , m_toolBox{std::make_unique<MapViewToolBox>(m_document, m_mapViewBar->toolBook())}
+  , m_toolBox{std::make_unique<MapViewToolBox>(
+      m_document,
+      m_appController.drawShapeToolExtensionRegistry(),
+      m_appController.drawShapeToolExtensionPageRegistry(),
+      m_mapViewBar->toolBook())}
   , m_activationTracker{std::make_unique<MapViewActivationTracker>()}
 {
   setObjectName("SwitchableMapViewContainer");

@@ -44,6 +44,8 @@
 #include "ui/AboutDialog.h"
 #include "ui/ActionManager.h"
 #include "ui/CrashDialog.h"
+#include "ui/DrawShapeToolExtensionPageRegistry.h"
+#include "ui/DrawShapeToolExtensionRegistry.h"
 #include "ui/FileDialogDefaultDir.h"
 #include "ui/GameDialog.h"
 #include "ui/GlFunctions.h"
@@ -184,6 +186,10 @@ AppController::AppController(
   , m_processResourcesTimer{new QTimer{this}}
   , m_httpClient{new upd::QtHttpClient{*m_networkManager}}
   , m_updater{new upd::Updater{*m_httpClient, makeUpdateConfig(), this}}
+  , m_drawShapeToolExtensionRegistry{std::make_unique<DrawShapeToolExtensionRegistry>(
+      createDrawShapeToolExtensionRegistry())}
+  , m_drawShapeToolExtensionPageRegistry{std::make_unique<
+      DrawShapeToolExtensionPageRegistry>(createDrawShapeToolExtensionPageRegistry())}
   , m_mapWindowManager{createMapWindowManager(*this)}
   , m_recentDocuments{createRecentDocuments(this)}
   , m_actionManager{std::make_unique<ActionManager>()}
@@ -240,6 +246,18 @@ mdl::GameManager& AppController::gameManager()
 upd::Updater& AppController::updater()
 {
   return *m_updater;
+}
+
+const DrawShapeToolExtensionRegistry& AppController::drawShapeToolExtensionRegistry()
+  const
+{
+  return *m_drawShapeToolExtensionRegistry;
+}
+
+const DrawShapeToolExtensionPageRegistry& AppController::
+  drawShapeToolExtensionPageRegistry() const
+{
+  return *m_drawShapeToolExtensionPageRegistry;
 }
 
 MapWindowManager& AppController::mapWindowManager()

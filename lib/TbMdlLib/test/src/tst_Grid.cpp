@@ -117,6 +117,75 @@ TEST_CASE("Grid")
     CHECK(Grid{2}.angle() == vm::approx{vm::to_radians(15.0)});
   }
 
+  SECTION("customAlignment")
+  {
+    auto grid = Grid{0};
+    const auto first = vm::segment3d{{10, 0, 0}, {10, 0, 10}};
+    const auto second = vm::segment3d{{10, 4, 2}, {10, 4, 12}};
+
+    REQUIRE(grid.canSetAlignment(first, second));
+    REQUIRE(grid.setAlignment(first, second));
+    CHECK(grid.hasCustomAlignment());
+
+    CHECK(grid.gridAxis(0) == vm::approx{vm::vec3d{0, 0, 1}});
+    CHECK(grid.gridAxis(1) == vm::approx{vm::vec3d{0, 1, 0}});
+    CHECK(grid.gridAxis(2) == vm::approx{vm::vec3d{-1, 0, 0}});
+    CHECK(grid.worldToGrid({10, 4, 2}) == vm::approx{vm::vec3d{2, 4, 0}});
+    CHECK(grid.gridToWorld({2, 4, 0}) == vm::approx{vm::vec3d{10, 4, 2}});
+
+    CHECK(grid.snap(vm::vec3d{10.4, 2.3, 3.6}) == vm::approx{vm::vec3d{10, 2, 4}});
+    CHECK(grid.snapDelta(vm::vec3d{0.2, 1.6, 2.7}) == vm::approx{vm::vec3d{0, 2, 3}});
+    CHECK(
+      grid.snap(vm::vec3d{10, 2.3, 3.6}, vm::plane3d{{10, 0, 0}, {1, 0, 0}})
+      == vm::approx{vm::vec3d{10, 2, 4}});
+
+    grid.resetAlignment();
+    CHECK_FALSE(grid.hasCustomAlignment());
+    CHECK(grid.worldToGrid({10, 4, 2}) == vm::approx{vm::vec3d{10, 4, 2}});
+  }
+
+  SECTION("customAlignmentRequiresDistinctParallelEdges")
+  {
+    auto grid = Grid{0};
+    const auto edge = vm::segment3d{{0, 0, 0}, {0, 0, 16}};
+
+    CHECK_FALSE(grid.setAlignment(edge, vm::segment3d{{0, 0, 0}, {0, 16, 0}}));
+    CHECK_FALSE(grid.setAlignment(edge, vm::segment3d{{0, 0, 4}, {0, 0, 20}}));
+    CHECK_FALSE(grid.hasCustomAlignment());
+  }
+
+  SECTION("customAlignmentUsesLongestParallelFaceEdges")
+  {
+    auto grid = Grid{0};
+    const auto face = vm::polygon3d{
+      {10, 0, 2},
+      {30, 0, 2},
+      {30, 8, 2},
+      {10, 8, 2},
+    };
+
+    REQUIRE(grid.canSetAlignment(face));
+    REQUIRE(grid.setAlignment(face));
+    CHECK(grid.gridAxis(0) == vm::approx{vm::vec3d{1, 0, 0}});
+    CHECK(grid.gridAxis(1) == vm::approx{vm::vec3d{0, 1, 0}});
+    CHECK(grid.gridAxis(2) == vm::approx{vm::vec3d{0, 0, 1}});
+    CHECK(grid.worldToGrid({30, 8, 2}) == vm::approx{vm::vec3d{20, 8, 0}});
+  }
+
+  SECTION("customAlignmentRequiresParallelFaceEdges")
+  {
+    auto grid = Grid{0};
+    const auto face = vm::polygon3d{
+      {0, 0, 0},
+      {12, 0, 0},
+      {3, 7, 0},
+    };
+
+    CHECK_FALSE(grid.canSetAlignment(face));
+    CHECK_FALSE(grid.setAlignment(face));
+    CHECK_FALSE(grid.hasCustomAlignment());
+  }
+
   SECTION("visible")
   {
     auto grid = Grid{2};

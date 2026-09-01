@@ -25,6 +25,8 @@
 #include "kd/contracts.h"
 
 #include "vm/intersection.h"
+#include "vm/mat.h"
+#include "vm/mat_ext.h"
 #include "vm/plane.h"
 #include "vm/polygon.h"
 #include "vm/scalar.h"
@@ -49,6 +51,8 @@ private:
   int m_size;
   bool m_snap = true;
   bool m_visible = true;
+  vm::mat4x4d m_worldToGrid = vm::mat4x4d::identity();
+  vm::mat4x4d m_gridToWorld = vm::mat4x4d::identity();
 
 public:
   Notifier<> gridDidChangeNotifier;
@@ -73,6 +77,35 @@ public:
 
   bool snap() const;
   void toggleSnap();
+
+  /**
+   * Aligns the grid to the plane defined by two distinct parallel edges. The first grid
+   * axis follows the edges, the second runs from the first edge to the second, and the
+   * third is perpendicular to their plane. The start of the first edge becomes the grid
+   * origin.
+   *
+   * Returns false without changing the grid if the edges are not parallel or if they are
+   * collinear.
+   */
+  bool setAlignment(const vm::segment3d& first, const vm::segment3d& second);
+  bool canSetAlignment(const vm::segment3d& first, const vm::segment3d& second) const;
+
+  /**
+   * Aligns the grid to the longest pair of distinct parallel boundary edges of the
+   * given polygon. The pair with the greatest combined edge length is used.
+   *
+   * Returns false without changing the grid if the polygon has no such pair.
+   */
+  bool setAlignment(const vm::polygon3d& polygon);
+  bool canSetAlignment(const vm::polygon3d& polygon) const;
+  void resetAlignment();
+  bool hasCustomAlignment() const;
+
+  const vm::mat4x4d& worldToGridMatrix() const;
+  const vm::mat4x4d& gridToWorldMatrix() const;
+  vm::vec3d worldToGrid(const vm::vec3d& point) const;
+  vm::vec3d gridToWorld(const vm::vec3d& point) const;
+  vm::vec3d gridAxis(size_t index) const;
 
   template <typename T>
   T snapAngle(const T a) const
@@ -201,6 +234,22 @@ public: // Snap vectors.
     return snap(p, SnapDir::Down, skip);
   }
 
+  /**
+   * Snaps a displacement to the grid axes without applying the grid origin.
+   */
+  vm::vec3d snapDelta(const vm::vec3d& delta) const
+  {
+    if (!snap())
+    {
+      return delta;
+    }
+
+    const auto toGrid = vm::strip_translation(m_worldToGrid);
+    const auto toWorld = vm::strip_translation(m_gridToWorld);
+    const auto local = toGrid * delta;
+    return toWorld * vm::vec3d{snap(local.x()), snap(local.y()), snap(local.z())};
+  }
+
 private:
   template <typename T, size_t S>
   vm::vec<T, S> snap(
@@ -211,10 +260,21 @@ private:
       return p;
     }
 
+    auto local = p;
+    if constexpr (S == 3)
+    {
+      local = vm::vec<T, S>{m_worldToGrid * vm::vec3d{p}};
+    }
+
     auto result = vm::vec<T, S>{};
     for (size_t i = 0; i < S; ++i)
     {
-      result[i] = snap(p[i], snapDir, skip);
+      result[i] = snap(local[i], snapDir, skip);
+    }
+
+    if constexpr (S == 3)
+    {
+      result = vm::vec<T, S>{m_gridToWorld * vm::vec3d{result}};
     }
     return result;
   }
@@ -229,12 +289,25 @@ public: // Snap towards an arbitrary direction.
       return p;
     }
 
+    auto localPoint = p;
+    auto localDirection = d;
+    if constexpr (S == 3)
+    {
+      localPoint = vm::vec<T, S>{m_worldToGrid * vm::vec3d{p}};
+      localDirection = vm::vec<T, S>{vm::strip_translation(m_worldToGrid) * vm::vec3d{d}};
+    }
+
     auto result = vm::vec<T, S>{};
     for (size_t i = 0; i < S; ++i)
     {
-      result[i] = d[i] > T(0)   ? result[i] = snapUp(p[i], skip)
-                  : d[i] < T(0) ? snapDown(p[i], skip)
-                                : snap(p[i]);
+      result[i] = localDirection[i] > T(0)   ? snap(localPoint[i], SnapDir::Up, skip)
+                  : localDirection[i] < T(0) ? snap(localPoint[i], SnapDir::Down, skip)
+                                             : snap(localPoint[i], SnapDir::None, skip);
+    }
+
+    if constexpr (S == 3)
+    {
+      result = vm::vec<T, S>{m_gridToWorld * vm::vec3d{result}};
     }
     return result;
   }
@@ -268,11 +341,19 @@ public: // Snapping on a plane.
     const bool skip = false) const
   {
 
+    auto localDirection = d;
+    if constexpr (S == 3)
+    {
+      localDirection = vm::vec<T, S>{vm::strip_translation(m_worldToGrid) * vm::vec3d{d}};
+    }
+
     SnapDir snapDirs[S];
     for (size_t i = 0; i < S; ++i)
     {
       snapDirs[i] =
-        (d[i] < 0.0 ? SnapDir::Down : (d[i] > 0.0 ? SnapDir::Up : SnapDir::None));
+        (localDirection[i] < 0.0   ? SnapDir::Down
+         : localDirection[i] > 0.0 ? SnapDir::Up
+                                   : SnapDir::None);
     }
 
     return snap(p, onPlane, snapDirs, skip);
@@ -308,26 +389,29 @@ private:
     const bool skip = false) const
   {
 
+    auto localPoint = vm::vec<T, S>{m_worldToGrid * vm::vec3d{p}};
+    const auto localPlane = onPlane.transform(vm::mat<T, 4, 4>{m_worldToGrid});
+
     auto result = vm::vec<T, 3>{};
-    switch (vm::find_abs_max_component(onPlane.normal))
+    switch (vm::find_abs_max_component(localPlane.normal))
     {
     case vm::axis::x:
-      result[1] = snap(p.y(), snapDirs[1], skip);
-      result[2] = snap(p.z(), snapDirs[2], skip);
-      result[0] = onPlane.xAt(result.yz());
+      result[1] = snap(localPoint.y(), snapDirs[1], skip);
+      result[2] = snap(localPoint.z(), snapDirs[2], skip);
+      result[0] = localPlane.xAt(result.yz());
       break;
     case vm::axis::y:
-      result[0] = snap(p.x(), snapDirs[0], skip);
-      result[2] = snap(p.z(), snapDirs[2], skip);
-      result[1] = onPlane.yAt(result.xz());
+      result[0] = snap(localPoint.x(), snapDirs[0], skip);
+      result[2] = snap(localPoint.z(), snapDirs[2], skip);
+      result[1] = localPlane.yAt(result.xz());
       break;
     case vm::axis::z:
-      result[0] = snap(p.x(), snapDirs[0], skip);
-      result[1] = snap(p.y(), snapDirs[1], skip);
-      result[2] = onPlane.zAt(result.xy());
+      result[0] = snap(localPoint.x(), snapDirs[0], skip);
+      result[1] = snap(localPoint.y(), snapDirs[1], skip);
+      result[2] = localPlane.zAt(result.xy());
       break;
     }
-    return result;
+    return vm::vec<T, S>{m_gridToWorld * vm::vec3d{result}};
   }
 
 public:
@@ -337,9 +421,12 @@ public:
   template <typename T>
   vm::vec<T, 3> snap(const vm::vec<T, 3>& p, const vm::line<T, 3> line) const
   {
+    const auto localPoint = vm::vec<T, 3>{m_worldToGrid * vm::vec3d{p}};
+    const auto localLine = line.transform(vm::mat<T, 4, 4>{m_worldToGrid});
+
     // Project the point onto the line.
-    const auto pr = vm::project_point(line, p);
-    const auto prDist = vm::distance_to_projected_point(line, pr);
+    const auto pr = vm::project_point(localLine, localPoint);
+    const auto prDist = vm::distance_to_projected_point(localLine, pr);
 
     auto result = pr;
     auto bestDiff = std::numeric_limits<T>::max();
@@ -348,21 +435,22 @@ public:
       if (line.direction[i] != 0.0)
       {
         const auto v = std::array<T, 2>{
-          {snapDown(pr[i], false) - line.point[i], snapUp(pr[i], false) - line.point[i]}};
+          {snapDown(pr[i], false) - localLine.point[i],
+           snapUp(pr[i], false) - localLine.point[i]}};
         for (size_t j = 0; j < 2; ++j)
         {
-          const auto s = v[j] / line.direction[i];
+          const auto s = v[j] / localLine.direction[i];
           const auto diff = vm::abs_difference(s, prDist);
           if (diff < bestDiff)
           {
-            result = vm::point_at_distance(line, s);
+            result = vm::point_at_distance(localLine, s);
             bestDiff = diff;
           }
         }
       }
     }
 
-    return result;
+    return vm::vec<T, 3>{m_gridToWorld * vm::vec3d{result}};
   }
 
   template <typename T>

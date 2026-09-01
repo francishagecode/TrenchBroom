@@ -53,6 +53,13 @@ private:
   // For ICO sphere
   size_t m_accuracy = 1;
 
+  // For torus
+  mdl::TorusShape m_torusShape{
+    .ringSegments = 16u,
+    .tubeSegments = 8u,
+    .holeSize = 0.5,
+  };
+
   // For stair shapes
   double m_stepHeight = 16.0;
   StairDirection m_stairDirection = StairDirection::PosX;
@@ -108,6 +115,9 @@ public:
 
   size_t accuracy() const;
   void setAccuracy(size_t accuracy);
+
+  const mdl::TorusShape& torusShape() const;
+  void setTorusShape(mdl::TorusShape torusShape);
 
   double stepHeight() const;
   void setStepHeight(double stepHeight);

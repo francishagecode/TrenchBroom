@@ -108,6 +108,20 @@ void DrawShapeToolParameters::setAccuracy(const size_t accuracy)
   }
 }
 
+const mdl::TorusShape& DrawShapeToolParameters::torusShape() const
+{
+  return m_torusShape;
+}
+
+void DrawShapeToolParameters::setTorusShape(mdl::TorusShape torusShape)
+{
+  if (torusShape != m_torusShape)
+  {
+    m_torusShape = std::move(torusShape);
+    parametersDidChangeNotifier();
+  }
+}
+
 double DrawShapeToolParameters::stepHeight() const
 {
   return m_stepHeight;

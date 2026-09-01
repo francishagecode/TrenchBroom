@@ -25,14 +25,68 @@
 #include "kd/contracts.h"
 
 #include "vm/intersection.h"
+#include "vm/mat_ext.h"
 #include "vm/ray.h"
 #include "vm/scalar.h"
 #include "vm/vec.h"
 
 #include <cmath>
+#include <optional>
+#include <utility>
 
 namespace tb::mdl
 {
+namespace
+{
+
+bool canSetAlignmentToEdges(
+  const vm::segment3d& first, const vm::segment3d& second)
+{
+  const auto firstVector = first.end() - first.start();
+  const auto secondVector = second.end() - second.start();
+  if (
+    vm::is_zero(firstVector, vm::Cd::almost_zero())
+    || vm::is_zero(secondVector, vm::Cd::almost_zero())
+    || !vm::is_parallel(firstVector, secondVector))
+  {
+    return false;
+  }
+
+  const auto xAxis = vm::normalize(firstVector);
+  const auto between = second.start() - first.start();
+  const auto perpendicular = between - vm::dot(between, xAxis) * xAxis;
+  return !vm::is_zero(perpendicular, vm::Cd::almost_zero());
+}
+
+std::optional<std::pair<vm::segment3d, vm::segment3d>> findAlignmentEdges(
+  const vm::polygon3d& polygon)
+{
+  std::optional<std::pair<vm::segment3d, vm::segment3d>> result;
+  auto longestCombinedLength = 0.0;
+  const auto& vertices = polygon.vertices();
+
+  for (size_t i = 0; i < vertices.size(); ++i)
+  {
+    const auto first = vm::segment3d{vertices[i], vertices[(i + 1) % vertices.size()]};
+    for (size_t j = i + 1; j < vertices.size(); ++j)
+    {
+      const auto second =
+        vm::segment3d{vertices[j], vertices[(j + 1) % vertices.size()]};
+      const auto combinedLength = first.length() + second.length();
+      if (
+        canSetAlignmentToEdges(first, second)
+        && (!result || combinedLength > longestCombinedLength))
+      {
+        result = std::pair{first, second};
+        longestCombinedLength = combinedLength;
+      }
+    }
+  }
+
+  return result;
+}
+
+} // namespace
 
 Grid::Grid(const int size)
   : m_size{size}
@@ -108,24 +162,121 @@ void Grid::toggleSnap()
   gridDidChangeNotifier();
 }
 
+bool Grid::canSetAlignment(const vm::segment3d& first, const vm::segment3d& second) const
+{
+  return canSetAlignmentToEdges(first, second);
+}
+
+bool Grid::setAlignment(const vm::segment3d& first, const vm::segment3d& second)
+{
+  if (!canSetAlignment(first, second))
+  {
+    return false;
+  }
+
+  const auto xAxis = vm::normalize(first.end() - first.start());
+  const auto between = second.start() - first.start();
+  const auto yAxis = vm::normalize(between - vm::dot(between, xAxis) * xAxis);
+  const auto zAxis = vm::normalize(vm::cross(xAxis, yAxis));
+  const auto& origin = first.start();
+
+  m_gridToWorld = vm::mat4x4d{
+    xAxis.x(),
+    yAxis.x(),
+    zAxis.x(),
+    origin.x(),
+    xAxis.y(),
+    yAxis.y(),
+    zAxis.y(),
+    origin.y(),
+    xAxis.z(),
+    yAxis.z(),
+    zAxis.z(),
+    origin.z(),
+    0.0,
+    0.0,
+    0.0,
+    1.0};
+  m_worldToGrid = *vm::invert(m_gridToWorld);
+  gridDidChangeNotifier();
+  return true;
+}
+
+bool Grid::canSetAlignment(const vm::polygon3d& polygon) const
+{
+  return findAlignmentEdges(polygon).has_value();
+}
+
+bool Grid::setAlignment(const vm::polygon3d& polygon)
+{
+  if (const auto edges = findAlignmentEdges(polygon))
+  {
+    return setAlignment(edges->first, edges->second);
+  }
+  return false;
+}
+
+void Grid::resetAlignment()
+{
+  if (hasCustomAlignment())
+  {
+    m_worldToGrid = vm::mat4x4d::identity();
+    m_gridToWorld = vm::mat4x4d::identity();
+    gridDidChangeNotifier();
+  }
+}
+
+bool Grid::hasCustomAlignment() const
+{
+  return m_worldToGrid != vm::mat4x4d::identity();
+}
+
+const vm::mat4x4d& Grid::worldToGridMatrix() const
+{
+  return m_worldToGrid;
+}
+
+const vm::mat4x4d& Grid::gridToWorldMatrix() const
+{
+  return m_gridToWorld;
+}
+
+vm::vec3d Grid::worldToGrid(const vm::vec3d& point) const
+{
+  return m_worldToGrid * point;
+}
+
+vm::vec3d Grid::gridToWorld(const vm::vec3d& point) const
+{
+  return m_gridToWorld * point;
+}
+
+vm::vec3d Grid::gridAxis(const size_t index) const
+{
+  contract_pre(index < 3u);
+  return vm::vec3d{m_gridToWorld[index]};
+}
+
 double Grid::intersectWithRay(const vm::ray3d& ray, const size_t skip) const
 {
+  const auto localRay = vm::ray3d{
+    m_worldToGrid * ray.origin, vm::strip_translation(m_worldToGrid) * ray.direction};
   auto planeAnchor = vm::vec3d{};
 
   for (size_t i = 0; i < 3; ++i)
   {
     planeAnchor[i] =
-      ray.direction[i] > 0.0
-        ? snapUp(ray.origin[i], true) + static_cast<double>(skip) * actualSize()
-        : snapDown(ray.origin[i], true) - static_cast<double>(skip) * actualSize();
+      localRay.direction[i] > 0.0
+        ? snapUp(localRay.origin[i], true) + static_cast<double>(skip) * actualSize()
+        : snapDown(localRay.origin[i], true) - static_cast<double>(skip) * actualSize();
   }
 
   const auto distX =
-    vm::intersect_ray_plane(ray, vm::plane3d(planeAnchor, vm::vec3d{1, 0, 0}));
+    vm::intersect_ray_plane(localRay, vm::plane3d(planeAnchor, vm::vec3d{1, 0, 0}));
   const auto distY =
-    vm::intersect_ray_plane(ray, vm::plane3d(planeAnchor, vm::vec3d{0, 1, 0}));
+    vm::intersect_ray_plane(localRay, vm::plane3d(planeAnchor, vm::vec3d{0, 1, 0}));
   const auto distZ =
-    vm::intersect_ray_plane(ray, vm::plane3d(planeAnchor, vm::vec3d{0, 0, 1}));
+    vm::intersect_ray_plane(localRay, vm::plane3d(planeAnchor, vm::vec3d{0, 0, 1}));
 
   auto dist = distX;
   if (distY && (!dist || std::abs(*distY) < std::abs(*dist)))
@@ -200,10 +351,11 @@ vm::vec3d Grid::moveDeltaForBounds(
   const auto localY = vm::find_abs_max_component(targetPlane.normal, 2);
 
   auto firstCorner = snapTowards(hitPoint, -ray.direction);
-  if (vm::is_equal(
-        targetPlane.normal,
-        vm::get_abs_max_component_axis(targetPlane.normal),
-        vm::Cd::almost_zero()))
+  if (
+    vm::is_equal(
+      targetPlane.normal,
+      vm::get_abs_max_component_axis(targetPlane.normal),
+      vm::Cd::almost_zero()))
   {
     // targetPlane is axial. As a special case, only snap X and Y
     firstCorner[localZ] = hitPoint[localZ];
@@ -243,19 +395,20 @@ vm::vec3d Grid::moveDeltaForBounds(
 
 double Grid::snapToGridPlane(const vm::line3d& line, const double distance) const
 {
+  const auto localLine = line.transform(m_worldToGrid);
   auto snappedDistance = std::numeric_limits<double>::max();
 
   // x is a point on the line and it is located in one grid cube
-  const auto x = vm::point_at_distance(line, distance);
+  const auto x = vm::point_at_distance(localLine, distance);
 
   // find the corner of the grid that is closest to x:
-  const auto c = snap(x);
+  const auto c = vm::vec3d{snap(x.x()), snap(x.y()), snap(x.z())};
 
   // intersect l with every grid plane that meets at that corner
   for (size_t i = 0; i < 3; ++i)
   {
     const auto p = vm::plane3d{c, vm::vec3d::axis(i)};
-    const auto y = vm::intersect_line_plane(line, p);
+    const auto y = vm::intersect_line_plane(localLine, p);
     if (y && vm::abs(*y - distance) < vm::abs(snappedDistance - distance))
     {
       snappedDistance = *y;

@@ -24,11 +24,9 @@
 #include "mdl/GameInfo.h"
 #include "mdl/Map.h"
 #include "mdl/WorldNode.h"
-#include "ui/DrawShapeToolExtensionKind.h"
 #include "ui/DrawShapeToolParameters.h"
 #include "ui/MapDocument.h"
 
-#include "kd/ranges/to.h"
 #include "kd/result_fold.h"
 
 #include <algorithm>
@@ -53,38 +51,6 @@ vm::axis::type stairDirectionToAxis(const StairDirection direction)
 bool isPositiveStairDirection(const StairDirection direction)
 {
   return direction == StairDirection::PosX || direction == StairDirection::PosY;
-}
-
-std::unique_ptr<DrawShapeToolExtension> createExtension(
-  const DrawShapeToolExtensionKind kind, MapDocument& document)
-{
-  switch (kind)
-  {
-  case DrawShapeToolExtensionKind::Cuboid:
-    return std::make_unique<DrawShapeToolCuboidExtension>(document);
-  case DrawShapeToolExtensionKind::Stairs:
-    return std::make_unique<DrawShapeToolStairsExtension>(document);
-  case DrawShapeToolExtensionKind::Arch:
-    return std::make_unique<DrawShapeToolArchExtension>(document);
-  case DrawShapeToolExtensionKind::Corridor:
-    return std::make_unique<DrawShapeToolCorridorExtension>(document);
-  case DrawShapeToolExtensionKind::CorridorBend:
-    return std::make_unique<DrawShapeToolCorridorBendExtension>(document);
-  case DrawShapeToolExtensionKind::CorridorTJunction:
-    return std::make_unique<DrawShapeToolCorridorTJunctionExtension>(document);
-  case DrawShapeToolExtensionKind::Chamber:
-    return std::make_unique<DrawShapeToolChamberExtension>(document);
-  case DrawShapeToolExtensionKind::Cylinder:
-    return std::make_unique<DrawShapeToolCylinderExtension>(document);
-  case DrawShapeToolExtensionKind::Cone:
-    return std::make_unique<DrawShapeToolConeExtension>(document);
-  case DrawShapeToolExtensionKind::UvSphere:
-    return std::make_unique<DrawShapeToolUvSphereExtension>(document);
-  case DrawShapeToolExtensionKind::IcoSphere:
-    return std::make_unique<DrawShapeToolIcoSphereExtension>(document);
-  }
-
-  return nullptr;
 }
 
 } // namespace
@@ -195,6 +161,47 @@ Result<std::vector<mdl::Brush>> DrawShapeToolConeExtension::createBrushes(
     .createCone(
       bounds, parameters.circleShape(), parameters.axis(), map.currentMaterialName())
     .transform([](auto brush) { return std::vector{std::move(brush)}; });
+}
+
+DrawShapeToolTorusExtension::DrawShapeToolTorusExtension(MapDocument& document)
+  : DrawShapeToolExtension{document}
+{
+}
+
+const std::string& DrawShapeToolTorusExtension::name() const
+{
+  static const auto name = std::string{"Torus"};
+  return name;
+}
+
+const std::filesystem::path& DrawShapeToolTorusExtension::iconPath() const
+{
+  static const auto path = std::filesystem::path{"ShapeTool_Torus.svg"};
+  return path;
+}
+
+Result<std::vector<mdl::Brush>> DrawShapeToolTorusExtension::createBrushes(
+  const vm::bbox3d& bounds, const DrawShapeToolParameters& parameters) const
+{
+  auto& map = m_document.map();
+
+  const auto builder = mdl::BrushBuilder{
+    map.worldNode().mapFormat(),
+    map.worldBounds(),
+    map.gameInfo().gameConfig.faceAttribsConfig.defaultUvAttributes,
+    map.gameInfo().gameConfig.faceAttribsConfig.defaultSurfaceAttributes};
+
+  return parameters.hollow() ? builder.createHollowTorus(
+                                 bounds,
+                                 parameters.thickness(),
+                                 parameters.torusShape(),
+                                 parameters.axis(),
+                                 map.currentMaterialName())
+                             : builder.createTorus(
+                                 bounds,
+                                 parameters.torusShape(),
+                                 parameters.axis(),
+                                 map.currentMaterialName());
 }
 
 DrawShapeToolIcoSphereExtension::DrawShapeToolIcoSphereExtension(MapDocument& document)
@@ -506,15 +513,6 @@ Result<std::vector<mdl::Brush>> DrawShapeToolChamberExtension::createBrushes(
     parameters.chamberShape(),
     parameters.chamberAxis(),
     map.currentMaterialName());
-}
-
-std::vector<std::unique_ptr<DrawShapeToolExtension>> createDrawShapeToolExtensions(
-  MapDocument& document)
-{
-  return DrawShapeToolExtensionKinds | std::views::transform([&](const auto kind) {
-           return createExtension(kind, document);
-         })
-         | kdl::ranges::to<std::vector>();
 }
 
 } // namespace tb::ui

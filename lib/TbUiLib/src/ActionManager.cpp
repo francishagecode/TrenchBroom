@@ -1623,6 +1623,28 @@ void ActionManager::createViewMenu()
       return context.hasDocument() && context.map().grid().snap();
     },
   }));
+  gridMenu.addSeparator();
+  gridMenu.addItem(addAction(Action{
+    "Menu/View/Grid/Align Grid to Selection",
+    "Align Grid to Selection",
+    ActionContext::Any,
+    KeySequence{"Alt+Shift+G"},
+    [](auto& context) { context.mapWindow().alignGridToSelection(); },
+    [](const auto& context) {
+      return context.hasDocument() && context.mapWindow().canAlignGridToSelection();
+    },
+  }));
+  gridMenu.addItem(addAction(Action{
+    "Menu/View/Grid/Reset Grid Alignment",
+    "Reset Grid Alignment",
+    ActionContext::Any,
+    KeySequence{},
+    [](auto& context) { context.mapWindow().resetGridAlignment(); },
+    [](const auto& context) {
+      return context.hasDocument() && context.mapWindow().canResetGridAlignment();
+    },
+  }));
+  gridMenu.addSeparator();
   gridMenu.addItem(addAction(Action{
     "Menu/View/Grid/Increase Grid Size",
     "Increase Grid Size",

@@ -25,11 +25,8 @@ namespace tb::ui
 {
 
 /**
- * The kinds of draw shape tool extensions, and the order in which their extensions
- * (DrawShapeToolExtensions.h/.cpp) and pages (DrawShapeToolExtensionPages.h/.cpp) are
- * created. Both createDrawShapeToolExtensions and createDrawShapeToolExtensionPages
- * switch over every value of this enum without a default case, so the compiler warns
- * if a kind is added or removed in only one of the two places.
+ * Legacy shape ordering retained temporarily for downstream code. The Simple Shape Tool
+ * runtime no longer includes this header; registry descriptor order is authoritative.
  */
 enum class DrawShapeToolExtensionKind
 {
@@ -42,6 +39,7 @@ enum class DrawShapeToolExtensionKind
   Chamber,
   Cylinder,
   Cone,
+  Torus,
   UvSphere,
   IcoSphere,
 };
@@ -56,6 +54,7 @@ inline constexpr auto DrawShapeToolExtensionKinds = std::array{
   DrawShapeToolExtensionKind::Chamber,
   DrawShapeToolExtensionKind::Cylinder,
   DrawShapeToolExtensionKind::Cone,
+  DrawShapeToolExtensionKind::Torus,
   DrawShapeToolExtensionKind::UvSphere,
   DrawShapeToolExtensionKind::IcoSphere,
 };

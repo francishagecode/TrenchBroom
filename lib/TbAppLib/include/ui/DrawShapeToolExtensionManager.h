@@ -21,35 +21,50 @@
 
 #include "base/Notifier.h"
 #include "ui/DrawShapeToolExtension.h"
+#include "ui/DrawShapeToolExtensionRegistry.h"
 #include "ui/DrawShapeToolParameters.h"
 
+#include <filesystem>
 #include <memory>
+#include <string>
+#include <string_view>
 #include <vector>
 
 namespace tb::ui
 {
 class MapDocument;
 
+struct DrawShapeToolExtensionInfo
+{
+  std::string id;
+  std::string name;
+  std::filesystem::path iconPath;
+};
+
 class DrawShapeToolExtensionManager
 {
 private:
   MapDocument& m_document;
-  DrawShapeToolParameters m_parameters;
+  std::vector<DrawShapeToolExtensionInfo> m_extensionInfos;
+  std::vector<std::unique_ptr<DrawShapeToolParameters>> m_parameters;
   std::vector<std::unique_ptr<DrawShapeToolExtension>> m_extensions;
   size_t m_currentExtensionIndex = 0;
 
 public:
   Notifier<size_t> currentExtensionDidChangeNotifier;
-  Notifier<> applyParametersNotifier;
 
-  explicit DrawShapeToolExtensionManager(MapDocument& document);
+  DrawShapeToolExtensionManager(
+    MapDocument& document, const DrawShapeToolExtensionRegistry& registry);
 
   MapDocument& document() const;
-  DrawShapeToolParameters& parameters();
+  DrawShapeToolParameters& parameters(size_t index);
 
-  const std::vector<DrawShapeToolExtension*> extensions() const;
+  const std::vector<DrawShapeToolExtensionInfo>& extensionInfos() const;
 
   const DrawShapeToolExtension& currentExtension() const;
+  const DrawShapeToolExtensionInfo& currentExtensionInfo() const;
+  size_t currentExtensionIndex() const;
+  bool setCurrentExtension(std::string_view id);
   bool setCurrentExtensionIndex(size_t currentExtensionIndex);
 
   Result<std::vector<mdl::Brush>> createBrushes(const vm::bbox3d& bounds) const;

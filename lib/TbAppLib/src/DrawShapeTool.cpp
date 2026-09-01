@@ -31,32 +31,33 @@
 
 #include "kd/ranges/to.h"
 #include "kd/result.h"
+#include "kd/result_fold.h"
 
 #include <ranges>
 
 namespace tb::ui
 {
 
-DrawShapeTool::DrawShapeTool(MapDocument& document)
+DrawShapeTool::DrawShapeTool(
+  MapDocument& document, const DrawShapeToolExtensionRegistry& registry)
   : CreateBrushesToolBase{true, document}
-  , m_extensionManager{document}
+  , m_extensionManager{document, registry}
 {
-  m_notifierConnection += m_extensionManager.applyParametersNotifier.connect([&]() {
-    auto& map = m_document.map();
-    if (const auto bounds = map.selectionBounds())
-    {
-      auto transaction = mdl::Transaction{map, "Apply shape parameters"};
-      update(*bounds);
-      mdl::removeSelectedNodes(map);
-      createBrushes();
-      transaction.commit();
-    }
-  });
 }
 
 void DrawShapeTool::update(const vm::bbox3d& bounds)
 {
-  m_extensionManager.createBrushes(bounds) | kdl::transform([&](auto brushes) {
+  update(bounds, vm::mat4x4d::identity());
+}
+
+void DrawShapeTool::update(const vm::bbox3d& bounds, const vm::mat4x4d& localToWorld)
+{
+  m_extensionManager.createBrushes(bounds) | kdl::and_then([&](auto brushes) {
+    return brushes | std::views::transform([&](auto& brush) {
+             return brush.transform(m_document.map().worldBounds(), localToWorld, false);
+           })
+           | kdl::fold | kdl::transform([&]() { return std::move(brushes); });
+  }) | kdl::transform([&](auto brushes) {
     updateBrushes(
       brushes | std::views::transform([](auto brush) {
         return std::make_unique<mdl::BrushNode>(std::move(brush));
@@ -76,7 +77,7 @@ bool DrawShapeTool::cancel()
     return false;
   }
 
-  return m_extensionManager.setCurrentExtensionIndex(0);
+  return m_extensionManager.setCurrentExtension("builtin.cuboid");
 }
 
 DrawShapeToolExtensionManager& DrawShapeTool::extensionManager()

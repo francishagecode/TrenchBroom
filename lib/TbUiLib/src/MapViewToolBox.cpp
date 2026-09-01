@@ -52,8 +52,14 @@
 namespace tb::ui
 {
 
-MapViewToolBox::MapViewToolBox(MapDocument& document, QStackedLayout* bookCtrl)
+MapViewToolBox::MapViewToolBox(
+  MapDocument& document,
+  const DrawShapeToolExtensionRegistry& drawShapeToolExtensionRegistry,
+  const DrawShapeToolExtensionPageRegistry& drawShapeToolExtensionPageRegistry,
+  QStackedLayout* bookCtrl)
   : m_document{document}
+  , m_drawShapeToolExtensionRegistry{drawShapeToolExtensionRegistry}
+  , m_drawShapeToolExtensionPageRegistry{drawShapeToolExtensionPageRegistry}
 {
   createTools(bookCtrl);
   connectObservers();
@@ -528,7 +534,8 @@ void MapViewToolBox::createTools(QStackedLayout* bookCtrl)
   m_assembleBrushTool = std::make_unique<AssembleBrushTool>(m_document);
   m_boxSelectionTool = std::make_unique<BoxSelectionTool>(m_document);
   m_createEntityTool = std::make_unique<CreateEntityTool>(m_document);
-  m_drawShapeTool = std::make_unique<DrawShapeTool>(m_document);
+  m_drawShapeTool =
+    std::make_unique<DrawShapeTool>(m_document, m_drawShapeToolExtensionRegistry);
   m_moveObjectsTool = std::make_unique<MoveObjectsTool>(m_document);
   m_extrudeTool = std::make_unique<ExtrudeTool>(m_document);
   m_rotateTool = std::make_unique<RotateTool>(m_document);
@@ -609,8 +616,8 @@ void MapViewToolBox::createTools(QStackedLayout* bookCtrl)
   m_controlPointToolPage = new ControlPointToolPage{m_document, parent};
   bookCtrl->addWidget(m_controlPointToolPage);
 
-  auto* drawShapeToolPage =
-    new DrawShapeToolPage{drawShapeTool().extensionManager(), parent};
+  auto* drawShapeToolPage = new DrawShapeToolPage{
+    drawShapeTool().extensionManager(), m_drawShapeToolExtensionPageRegistry, parent};
   m_notifierConnection += drawShapeToolPage->applyParametersNotifier.connect(
     [this]() { drawShapeTool().applyExtensionParameters(); });
   m_drawShapeToolPage = drawShapeToolPage;

@@ -56,6 +56,7 @@
 #include "mdl/GroupNode.h"
 #include "mdl/LayerNode.h"
 #include "mdl/Map.h"
+#include "mdl/NodeHandles.h"
 #include "mdl/MapFormat.h"
 #include "mdl/Map_Assets.h"
 #include "mdl/Map_Brushes.h"
@@ -130,6 +131,7 @@
 #include <algorithm>
 #include <chrono>
 #include <iterator>
+#include <ranges>
 #include <stdexcept>
 #include <string>
 #include <variant>
@@ -1897,6 +1899,67 @@ void MapWindow::toggleSnapToGrid()
 {
   auto& map = m_document->map();
   map.grid().toggleSnap();
+}
+
+void MapWindow::alignGridToSelection()
+{
+  if (!canAlignGridToSelection())
+  {
+    return;
+  }
+
+  auto& map = m_document->map();
+  const auto& toolBox = m_mapView->toolBox();
+  if (toolBox.edgeToolActive())
+  {
+    auto handles = map.nodeHandles().selectedHandles<mdl::EdgeHandle>();
+    auto first = handles.begin();
+    const auto second = std::next(first);
+    map.grid().setAlignment((*first).position, (*second).position);
+  }
+  else if (toolBox.faceToolActive())
+  {
+    auto handles = map.nodeHandles().selectedHandles<mdl::FaceHandle>();
+    map.grid().setAlignment((*handles.begin()).position);
+  }
+}
+
+bool MapWindow::canAlignGridToSelection() const
+{
+  const auto& toolBox = m_mapView->toolBox();
+  const auto& map = m_document->map();
+
+  if (toolBox.edgeToolActive())
+  {
+    auto handles = map.nodeHandles().selectedHandles<mdl::EdgeHandle>();
+    if (std::ranges::distance(handles) != 2)
+    {
+      return false;
+    }
+
+    auto first = handles.begin();
+    const auto second = std::next(first);
+    return map.grid().canSetAlignment((*first).position, (*second).position);
+  }
+
+  if (toolBox.faceToolActive())
+  {
+    auto handles = map.nodeHandles().selectedHandles<mdl::FaceHandle>();
+    return std::ranges::distance(handles) == 1
+           && map.grid().canSetAlignment((*handles.begin()).position);
+  }
+
+  return false;
+}
+
+void MapWindow::resetGridAlignment()
+{
+  m_document->map().grid().resetAlignment();
+}
+
+bool MapWindow::canResetGridAlignment() const
+{
+  return m_document->map().grid().hasCustomAlignment();
 }
 
 void MapWindow::incGridSize()

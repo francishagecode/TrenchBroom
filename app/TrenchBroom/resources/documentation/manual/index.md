@@ -395,9 +395,11 @@ Note that TrenchBroom draws a trace line for you when you move objects with the 
 
 ### The Grid
 
-TrenchBroom provides you with a static grid to align your objects to each other. The grid size can be 1, 2, 4, 8, 16, etc. up to 256. It is also possible to set the grid size to a value smaller than 1, more precisely to 0.5, 0.25 or 0.125. If grid snapping is enabled, then most editing operations will be snapped to the grid. For example, you can only move objects by the current grid size if grid snapping is enabled. In the 3D viewport, the grid is projected onto the brush faces. Therefore the grid may appear distorted if a brush face is not axis aligned. In the 2D viewports, the grid is just drawn in the background. You can change the brightness of the grid lines in the preferences.
+TrenchBroom provides a grid to align your objects to each other. The grid size can be 1, 2, 4, 8, 16, etc. up to 256. It is also possible to set the grid size to a value smaller than 1, more precisely to 0.5, 0.25 or 0.125. If grid snapping is enabled, then most editing operations will be snapped to the grid. For example, you can only move objects by the current grid size if grid snapping is enabled. In the 3D viewport, the grid is projected onto the brush faces. In the 2D viewports, the grid is drawn in the background. You can change the brightness of the grid lines in the preferences.
 
 The grid size can be set via the menu, or by scrolling the mouse wheel while holding both #key(Alt) and #key(Ctrl).
+
+The grid can also be aligned to angled brush geometry. Activate the [edge tool](#edge_tool) and select exactly two distinct parallel edges, or activate the [face tool](#face_tool) and select one face. Then choose #menu(Menu/View/Grid/Align Grid to Selection). For a selected face, TrenchBroom uses the parallel boundary-edge pair with the greatest combined length; the command is unavailable if the face has no parallel edges. The chosen edges define a plane: the first grid axis follows the edges, the second crosses from one edge to the other, and the first edge anchors the grid origin. You can then use snapping and draw brushes in the 3D viewport against this local grid, which is useful for details such as windows on an angled wall. Choose #menu(Menu/View/Grid/Reset Grid Alignment) to return to the world-aligned grid. Grid alignment is an editor setting and does not modify the selected brushes.
 
 ### Map View Context Menu {#map_view_context_menu}
 

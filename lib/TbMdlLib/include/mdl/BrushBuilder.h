@@ -94,6 +94,16 @@ struct ChamberShape
   bool operator==(const ChamberShape&) const = default;
 };
 
+struct TorusShape
+{
+  size_t ringSegments;
+  size_t tubeSegments;
+  /** Ratio of the inner hole diameter to the outer torus diameter. */
+  double holeSize;
+
+  bool operator==(const TorusShape&) const = default;
+};
+
 class BrushBuilder
 {
 private:
@@ -152,6 +162,31 @@ public:
     const vm::bbox3d& bounds,
     double thickness,
     const CircleShape& circleShape,
+    vm::axis::type axis,
+    const std::string& textureName) const;
+
+  /**
+   * Creates a solid torus as a ring of convex brush fragments. `axis` is normal to the
+   * hole. `ringSegments` controls the number of brushes around the ring, while
+   * `tubeSegments` controls the polygonal cross-section of each brush. `holeSize` is the
+   * ratio of the inner hole diameter to the outer diameter and must be between zero and
+   * one. The torus is scaled to fill `bounds`.
+   */
+  Result<std::vector<Brush>> createTorus(
+    const vm::bbox3d& bounds,
+    const TorusShape& torusShape,
+    vm::axis::type axis,
+    const std::string& textureName) const;
+
+  /**
+   * Creates a torus whose tube is a closed shell of convex brush fragments.
+   * `thickness` is measured inward from the outer surface and is fitted to constrained
+   * bounds so that drag previews remain valid.
+   */
+  Result<std::vector<Brush>> createHollowTorus(
+    const vm::bbox3d& bounds,
+    double thickness,
+    const TorusShape& torusShape,
     vm::axis::type axis,
     const std::string& textureName) const;
 

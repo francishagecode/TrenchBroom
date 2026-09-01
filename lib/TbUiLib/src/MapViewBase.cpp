@@ -1019,6 +1019,7 @@ void MapViewBase::renderContents(gl::Gl& gl)
   renderContext.setShowFog(pref(Preferences::ShowFog));
   renderContext.setShowGrid(grid.visible());
   renderContext.setGridSize(grid.actualSize());
+  renderContext.setWorldToGridMatrix(vm::mat4x4f{grid.worldToGridMatrix()});
   renderContext.setDpiScale(static_cast<float>(window()->devicePixelRatioF()));
   renderContext.setSoftMapBounds(
     pref(Preferences::ShowSoftMapBounds)

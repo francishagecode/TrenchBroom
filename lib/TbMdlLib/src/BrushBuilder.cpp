@@ -39,6 +39,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iterator>
+#include <limits>
 #include <optional>
 #include <ranges>
 #include <string>
@@ -507,6 +508,186 @@ Result<std::vector<Brush>> BrushBuilder::createHollowCylinder(
 
       return brushes | kdl::fold;
     });
+}
+
+namespace
+{
+struct TorusGeometry
+{
+  std::vector<std::vector<vm::vec3d>> crossSections;
+  std::vector<vm::vec3d> tubeCenters;
+};
+
+Result<TorusGeometry> makeTorusGeometry(
+  const vm::bbox3d& bounds, const TorusShape& torusShape)
+{
+  if (torusShape.ringSegments < 3u)
+  {
+    return Error{"Torus ring segments must be at least three"};
+  }
+  if (torusShape.tubeSegments < 3u)
+  {
+    return Error{"Torus tube segments must be at least three"};
+  }
+  if (
+    !std::isfinite(torusShape.holeSize) || torusShape.holeSize <= 0.0
+    || torusShape.holeSize >= 1.0)
+  {
+    return Error{"Torus hole size must be greater than zero and less than one"};
+  }
+
+  const auto size = bounds.size();
+  if (size.x() <= 0.0 || size.y() <= 0.0 || size.z() <= 0.0)
+  {
+    return Error{"Torus bounds must have positive size"};
+  }
+
+  const auto tubeRadius = (1.0 - torusShape.holeSize) / 2.0;
+  const auto ringRadius = 1.0 - tubeRadius;
+
+  const auto makeCrossSection = [&](const double ringAngle) {
+    auto vertices = std::vector<vm::vec3d>{};
+    vertices.reserve(torusShape.tubeSegments);
+
+    for (size_t i = 0u; i < torusShape.tubeSegments; ++i)
+    {
+      const auto tubeAngle =
+        vm::Cd::two_pi() * double(i) / double(torusShape.tubeSegments);
+      const auto radialDistance = ringRadius + tubeRadius * std::cos(tubeAngle);
+      const auto normalizedPoint = vm::vec3d{
+        radialDistance * std::cos(ringAngle),
+        radialDistance * std::sin(ringAngle),
+        std::sin(tubeAngle),
+      };
+      vertices.push_back(normalizedPoint);
+    }
+
+    return vertices;
+  };
+
+  auto geometry = TorusGeometry{};
+  geometry.crossSections.reserve(torusShape.ringSegments);
+  geometry.tubeCenters.reserve(torusShape.ringSegments);
+  auto normalizedBoundsBuilder = vm::bbox3d::builder{};
+  for (size_t i = 0u; i < torusShape.ringSegments; ++i)
+  {
+    const auto ringAngle = vm::Cd::two_pi() * double(i) / double(torusShape.ringSegments);
+    auto crossSection = makeCrossSection(ringAngle);
+    for (const auto& vertex : crossSection)
+    {
+      normalizedBoundsBuilder.add(vertex);
+    }
+    geometry.crossSections.push_back(std::move(crossSection));
+    geometry.tubeCenters.push_back(
+      {ringRadius * std::cos(ringAngle), ringRadius * std::sin(ringAngle), 0.0});
+  }
+
+  const auto normalizedBounds = normalizedBoundsBuilder.bounds();
+  const auto fitToBounds = vm::translation_matrix(bounds.min)
+                           * vm::scaling_matrix(size / normalizedBounds.size())
+                           * vm::translation_matrix(-normalizedBounds.min);
+
+  for (auto& crossSection : geometry.crossSections)
+  {
+    crossSection = fitToBounds * crossSection;
+  }
+  geometry.tubeCenters = fitToBounds * geometry.tubeCenters;
+
+  return geometry;
+}
+} // namespace
+
+Result<std::vector<Brush>> BrushBuilder::createTorus(
+  const vm::bbox3d& bounds,
+  const TorusShape& torusShape,
+  const vm::axis::type axis,
+  const std::string& textureName) const
+{
+  const auto toXY = vm::rotation_matrix(vm::vec3d::axis(axis), vm::vec3d{0, 0, 1});
+  const auto fromXY = vm::rotation_matrix(vm::vec3d{0, 0, 1}, vm::vec3d::axis(axis));
+  const auto boundsXY = bounds.transform(toXY);
+
+  return makeTorusGeometry(boundsXY, torusShape).and_then([&](const auto& geometry) {
+    auto brushes = std::vector<Result<Brush>>{};
+    brushes.reserve(torusShape.ringSegments);
+
+    for (size_t i = 0u; i < torusShape.ringSegments; ++i)
+    {
+      auto vertices = geometry.crossSections[i];
+      kdl::vec_append(
+        vertices, geometry.crossSections[(i + 1u) % torusShape.ringSegments]);
+      brushes.push_back(createBrush(fromXY * vertices, textureName));
+    }
+
+    return brushes | kdl::fold;
+  });
+}
+
+Result<std::vector<Brush>> BrushBuilder::createHollowTorus(
+  const vm::bbox3d& bounds,
+  const double thickness,
+  const TorusShape& torusShape,
+  const vm::axis::type axis,
+  const std::string& textureName) const
+{
+  if (!std::isfinite(thickness) || thickness <= 0.0)
+  {
+    return Error{"Torus shell thickness must be greater than zero"};
+  }
+
+  const auto toXY = vm::rotation_matrix(vm::vec3d::axis(axis), vm::vec3d{0, 0, 1});
+  const auto fromXY = vm::rotation_matrix(vm::vec3d{0, 0, 1}, vm::vec3d::axis(axis));
+  const auto boundsXY = bounds.transform(toXY);
+
+  return makeTorusGeometry(boundsXY, torusShape).and_then([&](const auto& geometry) {
+    auto minimumTubeRadius = std::numeric_limits<double>::max();
+    for (size_t i = 0u; i < torusShape.ringSegments; ++i)
+    {
+      for (const auto& vertex : geometry.crossSections[i])
+      {
+        minimumTubeRadius =
+          std::min(minimumTubeRadius, vm::length(vertex - geometry.tubeCenters[i]));
+      }
+    }
+
+    const auto fittedThickness = std::min(thickness, minimumTubeRadius * 0.9);
+    auto innerCrossSections = geometry.crossSections;
+    for (size_t i = 0u; i < torusShape.ringSegments; ++i)
+    {
+      const auto center = geometry.tubeCenters[i];
+      for (auto& vertex : innerCrossSections[i])
+      {
+        const auto delta = vertex - center;
+        const auto radius = vm::length(delta);
+        vertex = center + delta * ((radius - fittedThickness) / radius);
+      }
+    }
+
+    auto brushes = std::vector<Result<Brush>>{};
+    brushes.reserve(torusShape.ringSegments * torusShape.tubeSegments);
+
+    for (size_t i = 0u; i < torusShape.ringSegments; ++i)
+    {
+      const auto nextRing = (i + 1u) % torusShape.ringSegments;
+      for (size_t j = 0u; j < torusShape.tubeSegments; ++j)
+      {
+        const auto nextTube = (j + 1u) % torusShape.tubeSegments;
+        const auto vertices = std::vector<vm::vec3d>{
+          geometry.crossSections[i][j],
+          geometry.crossSections[i][nextTube],
+          geometry.crossSections[nextRing][j],
+          geometry.crossSections[nextRing][nextTube],
+          innerCrossSections[i][j],
+          innerCrossSections[i][nextTube],
+          innerCrossSections[nextRing][j],
+          innerCrossSections[nextRing][nextTube],
+        };
+        brushes.push_back(createBrush(fromXY * vertices, textureName));
+      }
+    }
+
+    return brushes | kdl::fold;
+  });
 }
 
 namespace

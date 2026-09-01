@@ -47,6 +47,7 @@ target_sources(TbUiLib
     ${CMAKE_CURRENT_SOURCE_DIR}/src/DialogButtonLayout.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/DialogHeader.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/DrawShapeToolExtensionPage.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/DrawShapeToolExtensionPageRegistry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/DrawShapeToolExtensionPages.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/DrawShapeToolPage.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/ElidedLabel.cpp
@@ -231,6 +232,7 @@ target_sources(TbUiLib
     ${CMAKE_CURRENT_SOURCE_DIR}/include/ui/DialogButtonLayout.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/ui/DialogHeader.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/ui/DrawShapeToolExtensionPage.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/ui/DrawShapeToolExtensionPageRegistry.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/ui/DrawShapeToolExtensionPages.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/ui/DrawShapeToolPage.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/ui/ElidedLabel.h

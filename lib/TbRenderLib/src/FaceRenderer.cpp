@@ -156,6 +156,7 @@ void FaceRenderer::render(RenderContext& context)
     shader.set("Brightness", prefs.get(Preferences::Brightness));
     shader.set("RenderGrid", context.showGrid());
     shader.set("GridSize", static_cast<float>(context.gridSize()));
+    shader.set("WorldToGridMatrix", context.worldToGridMatrix());
     shader.set("GridAlpha", prefs.get(Preferences::GridAlpha));
     shader.set("ApplyMaterial", applyMaterial);
     shader.set("Material", 0);

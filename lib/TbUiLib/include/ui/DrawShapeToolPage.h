@@ -30,12 +30,14 @@ class QToolButton;
 namespace tb::ui
 {
 class DrawShapeToolExtensionManager;
+class DrawShapeToolExtensionPageRegistry;
 
 class DrawShapeToolPage : public QWidget
 {
   Q_OBJECT
 private:
   DrawShapeToolExtensionManager& m_extensionManager;
+  const DrawShapeToolExtensionPageRegistry& m_extensionPageRegistry;
 
   QToolButton* m_extensionButton = nullptr;
   QStackedLayout* m_extensionPages = nullptr;
@@ -46,7 +48,9 @@ public:
   Notifier<> applyParametersNotifier;
 
   explicit DrawShapeToolPage(
-    DrawShapeToolExtensionManager& extensionManager, QWidget* parent = nullptr);
+    DrawShapeToolExtensionManager& extensionManager,
+    const DrawShapeToolExtensionPageRegistry& extensionPageRegistry,
+    QWidget* parent = nullptr);
 
 private:
   void createGui();

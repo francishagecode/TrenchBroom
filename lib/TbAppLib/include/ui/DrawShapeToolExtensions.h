@@ -63,6 +63,17 @@ public:
     const vm::bbox3d& bounds, const DrawShapeToolParameters& parameters) const override;
 };
 
+class DrawShapeToolTorusExtension : public DrawShapeToolExtension
+{
+public:
+  explicit DrawShapeToolTorusExtension(MapDocument& document);
+
+  const std::string& name() const override;
+  const std::filesystem::path& iconPath() const override;
+  Result<std::vector<mdl::Brush>> createBrushes(
+    const vm::bbox3d& bounds, const DrawShapeToolParameters& parameters) const override;
+};
+
 class DrawShapeToolIcoSphereExtension : public DrawShapeToolExtension
 {
 public:
@@ -150,8 +161,5 @@ public:
   Result<std::vector<mdl::Brush>> createBrushes(
     const vm::bbox3d& bounds, const DrawShapeToolParameters& parameters) const override;
 };
-
-std::vector<std::unique_ptr<DrawShapeToolExtension>> createDrawShapeToolExtensions(
-  MapDocument& document);
 
 } // namespace tb::ui

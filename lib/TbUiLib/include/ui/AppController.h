@@ -61,6 +61,8 @@ namespace ui
 {
 class AboutDialog;
 class ActionManager;
+class DrawShapeToolExtensionPageRegistry;
+class DrawShapeToolExtensionRegistry;
 class MapWindowManager;
 class RecentDocuments;
 class WelcomeWindow;
@@ -85,6 +87,9 @@ private:
   upd::HttpClient* m_httpClient = nullptr;
   upd::Updater* m_updater = nullptr;
 
+  std::unique_ptr<DrawShapeToolExtensionRegistry> m_drawShapeToolExtensionRegistry;
+  std::unique_ptr<DrawShapeToolExtensionPageRegistry>
+    m_drawShapeToolExtensionPageRegistry;
   MapWindowManager* m_mapWindowManager = nullptr;
   RecentDocuments* m_recentDocuments = nullptr;
   std::unique_ptr<ActionManager> m_actionManager;
@@ -117,6 +122,9 @@ public:
   mdl::GameManager& gameManager();
 
   upd::Updater& updater();
+
+  const DrawShapeToolExtensionRegistry& drawShapeToolExtensionRegistry() const;
+  const DrawShapeToolExtensionPageRegistry& drawShapeToolExtensionPageRegistry() const;
 
   MapWindowManager& mapWindowManager();
 

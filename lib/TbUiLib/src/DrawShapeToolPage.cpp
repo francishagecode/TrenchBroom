@@ -27,19 +27,20 @@
 
 #include "ui/BitmapButton.h"
 #include "ui/DrawShapeToolExtensionManager.h"
-#include "ui/DrawShapeToolExtensionPages.h"
+#include "ui/DrawShapeToolExtensionPageRegistry.h"
 #include "ui/ImageUtils.h"
 #include "ui/ViewConstants.h"
-
-#include "kd/ranges/enumerate_view.h"
 
 namespace tb::ui
 {
 
 DrawShapeToolPage::DrawShapeToolPage(
-  DrawShapeToolExtensionManager& extensionManager, QWidget* parent)
+  DrawShapeToolExtensionManager& extensionManager,
+  const DrawShapeToolExtensionPageRegistry& extensionPageRegistry,
+  QWidget* parent)
   : QWidget{parent}
   , m_extensionManager{extensionManager}
+  , m_extensionPageRegistry{extensionPageRegistry}
 {
   createGui();
   m_notifierConnection += m_extensionManager.currentExtensionDidChangeNotifier.connect(
@@ -49,32 +50,39 @@ DrawShapeToolPage::DrawShapeToolPage(
 void DrawShapeToolPage::createGui()
 {
   auto* label = new QLabel{tr("Shape")};
-  m_extensionButton = createBitmapButton(
-    m_extensionManager.currentExtension().iconPath(), tr("Click to select a shape"));
+  const auto& currentExtensionInfo = m_extensionManager.currentExtensionInfo();
+  m_extensionButton =
+    createBitmapButton(currentExtensionInfo.iconPath, tr("Click to select a shape"));
   m_extensionButton->setObjectName("toolButton_withBorder");
 
   auto* extensionMenu = new QMenu{m_extensionButton};
-  const auto extensions = m_extensionManager.extensions();
-  for (const auto [i, extension] : kdl::views::enumerate(extensions))
+  const auto& extensionInfos = m_extensionManager.extensionInfos();
+  for (const auto& extensionInfo : extensionInfos)
   {
-    auto icon = loadSVGIcon(extension->iconPath());
+    auto icon = loadSVGIcon(extensionInfo.iconPath);
 
     auto* action = extensionMenu->addAction(
-      icon, QString::fromStdString(extension->name()), this, [this, i]() {
-        m_extensionManager.setCurrentExtensionIndex(size_t(i));
-      });
+      icon,
+      QString::fromStdString(extensionInfo.name),
+      this,
+      [this, id = extensionInfo.id]() { m_extensionManager.setCurrentExtension(id); });
     action->setIconVisibleInMenu(true);
   }
   m_extensionButton->setMenu(extensionMenu);
   m_extensionButton->setPopupMode(QToolButton::InstantPopup);
 
   m_extensionPages = new QStackedLayout{};
-  for (auto* extensionPage : createDrawShapeToolExtensionPages(
-         m_extensionManager.document(), m_extensionManager.parameters()))
+  for (auto i = size_t{0}; i < extensionInfos.size(); ++i)
   {
-    m_notifierConnection += extensionPage->applyParametersNotifier.connect(
-      m_extensionManager.applyParametersNotifier);
-    m_extensionPages->addWidget(extensionPage);
+    auto extensionPage = m_extensionPageRegistry.create(
+      extensionInfos[i].id,
+      m_extensionManager.document(),
+      m_extensionManager.parameters(i),
+      this);
+    m_notifierConnection +=
+      extensionPage->applyParametersNotifier.connect(applyParametersNotifier);
+    m_extensionPages->addWidget(extensionPage.release());
+    m_extensionManager.parameters(i).parametersDidChangeNotifier();
   }
 
   auto* layout = new QHBoxLayout();
@@ -91,7 +99,7 @@ void DrawShapeToolPage::createGui()
 
 void DrawShapeToolPage::currentExtensionDidChange(const size_t index)
 {
-  auto icon = loadSVGIcon(m_extensionManager.currentExtension().iconPath());
+  auto icon = loadSVGIcon(m_extensionManager.currentExtensionInfo().iconPath);
   m_extensionButton->setIcon(icon);
   m_extensionPages->setCurrentIndex(int(index));
 }

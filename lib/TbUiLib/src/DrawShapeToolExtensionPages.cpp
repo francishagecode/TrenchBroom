@@ -33,17 +33,12 @@
 #include "mdl/Grid.h"
 #include "mdl/Map.h"
 #include "ui/BitmapButton.h"
-#include "ui/DrawShapeToolExtension.h"
-#include "ui/DrawShapeToolExtensionKind.h"
 #include "ui/DrawShapeToolParameters.h"
 #include "ui/MapDocument.h"
 #include "ui/ViewConstants.h"
 
-#include "kd/ranges/to.h"
-
 #include <algorithm>
 #include <array>
-#include <ranges>
 
 namespace tb::ui
 {
@@ -78,41 +73,6 @@ StairDirection indexToStairDirection(const size_t index)
     StairDirection::PosY,
     StairDirection::NegY};
   return directions[std::min(index, directions.size() - 1u)];
-}
-
-DrawShapeToolExtensionPage* createExtensionPage(
-  const DrawShapeToolExtensionKind kind,
-  MapDocument& document,
-  DrawShapeToolParameters& parameters,
-  QWidget* parent)
-{
-  switch (kind)
-  {
-  case DrawShapeToolExtensionKind::Cuboid:
-    return new DrawShapeToolExtensionPage{parent};
-  case DrawShapeToolExtensionKind::Stairs:
-    return new DrawShapeToolStairsExtensionPage{document, parameters, parent};
-  case DrawShapeToolExtensionKind::Arch:
-    return new DrawShapeToolArchShapeExtensionPage{document, parameters, parent};
-  case DrawShapeToolExtensionKind::Corridor:
-    return new DrawShapeToolCorridorShapeExtensionPage{document, parameters, parent};
-  case DrawShapeToolExtensionKind::CorridorBend:
-    return new DrawShapeToolCorridorBendExtensionPage{document, parameters, parent};
-  case DrawShapeToolExtensionKind::CorridorTJunction:
-    return new DrawShapeToolCorridorTJunctionExtensionPage{document, parameters, parent};
-  case DrawShapeToolExtensionKind::Chamber:
-    return new DrawShapeToolChamberExtensionPage{document, parameters, parent};
-  case DrawShapeToolExtensionKind::Cylinder:
-    return new DrawShapeToolCylinderShapeExtensionPage{document, parameters, parent};
-  case DrawShapeToolExtensionKind::Cone:
-    return new DrawShapeToolConeShapeExtensionPage{document, parameters, parent};
-  case DrawShapeToolExtensionKind::UvSphere:
-    return new DrawShapeToolUvSphereShapeExtensionPage{document, parameters, parent};
-  case DrawShapeToolExtensionKind::IcoSphere:
-    return new DrawShapeToolIcoSphereShapeExtensionPage{document, parameters, parent};
-  }
-
-  return nullptr;
 }
 
 } // namespace
@@ -180,31 +140,33 @@ DrawShapeToolCircularShapeExtensionPage::DrawShapeToolCircularShapeExtensionPage
     QOverload<int>::of(&QSpinBox::valueChanged),
     this,
     [&](const auto numSides) {
-      m_parameters.setCircleShape(std::visit(
-        kdl::overload(
-          [&](const mdl::EdgeAlignedCircle&) -> mdl::CircleShape {
-            return mdl::EdgeAlignedCircle{size_t(numSides)};
-          },
-          [&](const mdl::VertexAlignedCircle&) -> mdl::CircleShape {
-            return mdl::VertexAlignedCircle{size_t(numSides)};
-          },
-          [&](const mdl::ScalableCircle& circleShape) -> mdl::CircleShape {
-            return circleShape;
-          }),
-        m_parameters.circleShape()));
+      m_parameters.setCircleShape(
+        std::visit(
+          kdl::overload(
+            [&](const mdl::EdgeAlignedCircle&) -> mdl::CircleShape {
+              return mdl::EdgeAlignedCircle{size_t(numSides)};
+            },
+            [&](const mdl::VertexAlignedCircle&) -> mdl::CircleShape {
+              return mdl::VertexAlignedCircle{size_t(numSides)};
+            },
+            [&](const mdl::ScalableCircle& circleShape) -> mdl::CircleShape {
+              return circleShape;
+            }),
+          m_parameters.circleShape()));
     });
   connect(
     precisionBox,
     QOverload<int>::of(&QComboBox::currentIndexChanged),
     this,
     [&](const auto precision) {
-      m_parameters.setCircleShape(std::visit(
-        kdl::overload(
-          [&](const mdl::ScalableCircle&) -> mdl::CircleShape {
-            return mdl::ScalableCircle{size_t(precision)};
-          },
-          [](const auto& circleShape) -> mdl::CircleShape { return circleShape; }),
-        m_parameters.circleShape()));
+      m_parameters.setCircleShape(
+        std::visit(
+          kdl::overload(
+            [&](const mdl::ScalableCircle&) -> mdl::CircleShape {
+              return mdl::ScalableCircle{size_t(precision)};
+            },
+            [](const auto& circleShape) -> mdl::CircleShape { return circleShape; }),
+          m_parameters.circleShape()));
     });
   connect(edgeAlignedCircleButton, &QToolButton::clicked, this, [=, this]() {
     m_parameters.setCircleShape(
@@ -290,6 +252,99 @@ DrawShapeToolConeShapeExtensionPage::DrawShapeToolConeShapeExtensionPage(
   , m_parameters{parameters}
 {
   addApplyButton(document);
+}
+
+DrawShapeToolTorusShapeExtensionPage::DrawShapeToolTorusShapeExtensionPage(
+  MapDocument& document, DrawShapeToolParameters& parameters, QWidget* parent)
+  : DrawShapeToolAxisAlignedShapeExtensionPage{parameters, parent}
+  , m_parameters{parameters}
+{
+  auto* ringSegmentsLabel = new QLabel{tr("Ring Segments: ")};
+  auto* ringSegmentsBox = new QSpinBox{};
+  ringSegmentsBox->setRange(3, 64);
+  ringSegmentsBox->setSingleStep(4);
+  ringSegmentsBox->setToolTip(
+    tr("Number of convex brushes arranged around the torus ring."));
+
+  auto* tubeSegmentsLabel = new QLabel{tr("Tube Segments: ")};
+  auto* tubeSegmentsBox = new QSpinBox{};
+  tubeSegmentsBox->setRange(3, 32);
+  tubeSegmentsBox->setSingleStep(4);
+  tubeSegmentsBox->setToolTip(tr("Number of sides in the torus tube cross-section."));
+
+  auto* holeSizeLabel = new QLabel{tr("Hole Size: ")};
+  auto* holeSizeBox = new QDoubleSpinBox{};
+  holeSizeBox->setRange(5.0, 95.0);
+  holeSizeBox->setDecimals(0);
+  holeSizeBox->setSingleStep(5.0);
+  holeSizeBox->setSuffix(tr("%"));
+  holeSizeBox->setToolTip(
+    tr("Inner hole diameter as a percentage of the outer torus diameter."));
+
+  auto* hollowCheckBox = new QCheckBox{tr("Hollow")};
+
+  auto* thicknessLabel = new QLabel{tr("Thickness: ")};
+  auto* thicknessBox = new QDoubleSpinBox{};
+  thicknessBox->setEnabled(parameters.hollow());
+  thicknessBox->setRange(1, 128);
+  thicknessBox->setToolTip(tr("Wall thickness of the hollow torus tube."));
+
+  connect(
+    ringSegmentsBox,
+    QOverload<int>::of(&QSpinBox::valueChanged),
+    this,
+    [&](const auto ringSegments) {
+      auto shape = m_parameters.torusShape();
+      shape.ringSegments = size_t(ringSegments);
+      m_parameters.setTorusShape(shape);
+    });
+  connect(
+    tubeSegmentsBox,
+    QOverload<int>::of(&QSpinBox::valueChanged),
+    this,
+    [&](const auto tubeSegments) {
+      auto shape = m_parameters.torusShape();
+      shape.tubeSegments = size_t(tubeSegments);
+      m_parameters.setTorusShape(shape);
+    });
+  connect(
+    holeSizeBox,
+    QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+    this,
+    [&](const auto holeSizePercent) {
+      auto shape = m_parameters.torusShape();
+      shape.holeSize = holeSizePercent / 100.0;
+      m_parameters.setTorusShape(shape);
+    });
+  connect(hollowCheckBox, &QCheckBox::toggled, this, [&](const auto hollow) {
+    m_parameters.setHollow(hollow);
+  });
+  connect(
+    thicknessBox,
+    QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+    this,
+    [&](const auto thickness) { m_parameters.setThickness(thickness); });
+
+  addWidget(ringSegmentsLabel);
+  addWidget(ringSegmentsBox);
+  addWidget(tubeSegmentsLabel);
+  addWidget(tubeSegmentsBox);
+  addWidget(holeSizeLabel);
+  addWidget(holeSizeBox);
+  addWidget(hollowCheckBox);
+  addWidget(thicknessLabel);
+  addWidget(thicknessBox);
+  addApplyButton(document);
+
+  m_notifierConnection += m_parameters.parametersDidChangeNotifier.connect([=, this]() {
+    const auto& shape = m_parameters.torusShape();
+    ringSegmentsBox->setValue(int(shape.ringSegments));
+    tubeSegmentsBox->setValue(int(shape.tubeSegments));
+    holeSizeBox->setValue(shape.holeSize * 100.0);
+    hollowCheckBox->setChecked(m_parameters.hollow());
+    thicknessBox->setEnabled(m_parameters.hollow());
+    thicknessBox->setValue(m_parameters.thickness());
+  });
 }
 
 DrawShapeToolIcoSphereShapeExtensionPage::DrawShapeToolIcoSphereShapeExtensionPage(
@@ -889,20 +944,6 @@ DrawShapeToolChamberExtensionPage::DrawShapeToolChamberExtensionPage(
     entranceWidthBox->setEnabled(shape.openEntrance);
     entranceHeightBox->setEnabled(shape.openEntrance);
   });
-}
-
-std::vector<DrawShapeToolExtensionPage*> createDrawShapeToolExtensionPages(
-  MapDocument& document, DrawShapeToolParameters& parameters, QWidget* parent)
-{
-  auto result = DrawShapeToolExtensionKinds | std::views::transform([&](const auto kind) {
-                  return createExtensionPage(kind, document, parameters, parent);
-                })
-                | kdl::ranges::to<std::vector>();
-
-  // update all pages to reflect the current parameter values
-  parameters.parametersDidChangeNotifier();
-
-  return result;
 }
 
 } // namespace tb::ui

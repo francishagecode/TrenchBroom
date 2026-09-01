@@ -24,6 +24,7 @@ uniform vec4 GridColor;
 uniform float GridSize;
 uniform float GridAlpha;
 uniform float CameraZoom;
+uniform mat4 WorldToGridMatrix;
 
 uniform vec3 Normal;
 
@@ -38,8 +39,9 @@ void main()
   {
     float minGridSize = 5.0 / CameraZoom;
     float lineWidthFactor = 2.0 / CameraZoom;
-    float gridValue =
-      grid(modelCoordinates.xyz, Normal.xyz, GridSize, minGridSize, lineWidthFactor);
+    vec3 coords = (WorldToGridMatrix * modelCoordinates).xyz;
+    vec3 normal = mat3(WorldToGridMatrix) * Normal;
+    float gridValue = grid(coords, normal, GridSize, minGridSize, lineWidthFactor);
     gl_FragColor = vec4(GridColor.xyz, gridValue * GridAlpha);
   }
 }

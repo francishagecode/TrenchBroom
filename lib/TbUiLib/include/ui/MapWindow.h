@@ -322,6 +322,11 @@ public:
   void toggleShowGrid();
   void toggleSnapToGrid();
 
+  void alignGridToSelection();
+  bool canAlignGridToSelection() const;
+  void resetGridAlignment();
+  bool canResetGridAlignment() const;
+
   void incGridSize();
   bool canIncGridSize() const;
 

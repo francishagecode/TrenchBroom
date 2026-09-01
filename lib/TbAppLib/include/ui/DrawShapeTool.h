@@ -19,22 +19,22 @@
 
 #pragma once
 
-#include "base/NotifierConnection.h"
 #include "ui/CreateBrushesToolBase.h"
 #include "ui/DrawShapeToolExtensionManager.h"
+
+#include "vm/mat.h"
 
 namespace tb::ui
 {
 class MapDocument;
+class DrawShapeToolExtensionRegistry;
 
 class DrawShapeTool : public CreateBrushesToolBase
 {
-private:
-  NotifierConnection m_notifierConnection;
-
 public:
-  explicit DrawShapeTool(MapDocument& document);
+  DrawShapeTool(MapDocument& document, const DrawShapeToolExtensionRegistry& registry);
   void update(const vm::bbox3d& bounds);
+  void update(const vm::bbox3d& bounds, const vm::mat4x4d& localToWorld);
 
   bool cancel();
 

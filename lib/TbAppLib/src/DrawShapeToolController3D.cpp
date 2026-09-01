@@ -33,6 +33,7 @@
 
 #include "vm/bbox.h"
 #include "vm/line.h"
+#include "vm/mat.h"
 #include "vm/plane.h"
 
 namespace tb::ui
@@ -45,11 +46,19 @@ class DrawShapeDragDelegate : public HandleDragTrackerDelegate
 private:
   DrawShapeTool& m_tool;
   vm::bbox3d m_worldBounds;
+  vm::mat4x4d m_worldToGrid;
+  vm::mat4x4d m_gridToWorld;
 
 public:
-  DrawShapeDragDelegate(DrawShapeTool& tool, const vm::bbox3d& worldBounds)
+  DrawShapeDragDelegate(
+    DrawShapeTool& tool,
+    const vm::bbox3d& worldBounds,
+    const vm::mat4x4d& worldToGrid,
+    const vm::mat4x4d& gridToWorld)
     : m_tool{tool}
-    , m_worldBounds{worldBounds}
+    , m_worldBounds{worldBounds.transform(worldToGrid)}
+    , m_worldToGrid{worldToGrid}
+    , m_gridToWorld{gridToWorld}
   {
   }
 
@@ -60,11 +69,12 @@ public:
   {
     const auto currentBounds =
       makeBounds(inputState, initialHandlePosition, initialHandlePosition);
-    m_tool.update(currentBounds);
+    m_tool.update(currentBounds, m_gridToWorld);
     m_tool.refreshViews();
 
     return makeHandlePositionProposer(
-      makePlaneHandlePicker(vm::horizontal_plane(initialHandlePosition), handleOffset),
+      makePlaneHandlePicker(
+        vm::plane3d{initialHandlePosition, vm::vec3d{m_gridToWorld[2]}}, handleOffset),
       makeIdentityHandleSnapper());
   }
 
@@ -78,7 +88,7 @@ public:
 
       if (!currentBounds.is_empty())
       {
-        m_tool.update(currentBounds);
+        m_tool.update(currentBounds, m_gridToWorld);
         m_tool.refreshViews();
       }
     }
@@ -88,7 +98,7 @@ public:
       return UpdateDragConfig{
         makeHandlePositionProposer(
           makeLineHandlePicker(
-            vm::line3d{dragState.currentHandlePosition, vm::vec3d{0, 0, 1}},
+            vm::line3d{dragState.currentHandlePosition, vm::vec3d{m_gridToWorld[2]}},
             dragState.handleOffset),
           makeIdentityHandleSnapper()),
         ResetInitialHandlePosition::Keep};
@@ -97,7 +107,8 @@ public:
     return UpdateDragConfig{
       makeHandlePositionProposer(
         makePlaneHandlePicker(
-          vm::horizontal_plane(dragState.currentHandlePosition), dragState.handleOffset),
+          vm::plane3d{dragState.currentHandlePosition, vm::vec3d{m_gridToWorld[2]}},
+          dragState.handleOffset),
         makeIdentityHandleSnapper()),
       ResetInitialHandlePosition::Keep};
   }
@@ -149,7 +160,7 @@ private:
       return false;
     }
 
-    m_tool.update(currentBounds);
+    m_tool.update(currentBounds, m_gridToWorld);
     return true;
   }
 
@@ -158,11 +169,13 @@ private:
     const vm::vec3d& initialHandlePosition,
     const vm::vec3d& currentHandlePosition) const
   {
+    const auto initialGridPosition = m_worldToGrid * initialHandlePosition;
+    const auto currentGridPosition = m_worldToGrid * currentHandlePosition;
     auto bounds = snapBounds(
       inputState,
       vm::bbox3d{
-        vm::min(initialHandlePosition, currentHandlePosition),
-        vm::max(initialHandlePosition, currentHandlePosition),
+        vm::min(initialGridPosition, currentGridPosition),
+        vm::max(initialGridPosition, currentGridPosition),
       });
 
     if (inputState.modifierKeysDown(ModifierKeys::Shift))
@@ -181,7 +194,7 @@ private:
       const auto lengthDiff = zLengthAxis * bounds.size() + maxLengthAxes * maxLength;
 
       // The direction in which the user is dragging per component:
-      const auto dragDir = vm::step(initialHandlePosition, currentHandlePosition);
+      const auto dragDir = vm::step(initialGridPosition, currentGridPosition);
       bounds = vm::bbox3d{
         vm::mix(bounds.min, bounds.max - lengthDiff, vm::vec3d{1, 1, 1} - dragDir),
         vm::mix(bounds.max, bounds.min + lengthDiff, dragDir),
@@ -199,11 +212,14 @@ private:
     bounds.max = vm::correct(bounds.max);
 
     const auto& grid = m_tool.grid();
-    bounds.min = grid.snapDown(bounds.min);
-    bounds.max = grid.snapUp(bounds.max);
+    for (size_t i = 0u; i < 3u; ++i)
+    {
+      bounds.min[i] = grid.snapDown(bounds.min[i], false);
+      bounds.max[i] = grid.snapUp(bounds.max[i], false);
+    }
 
     const auto& camera = inputState.camera();
-    const auto cameraPosition = vm::vec3d{camera.position()};
+    const auto cameraPosition = m_worldToGrid * vm::vec3d{camera.position()};
 
     for (size_t i = 0; i < 3; i++)
     {
@@ -270,7 +286,11 @@ std::unique_ptr<GestureTracker> DrawShapeToolController3D::acceptMouseDrag(
     hit.isMatch() ? hit.hitPoint() : inputState.defaultPointUnderMouse();
 
   return createHandleDragTracker(
-    DrawShapeDragDelegate{m_tool, map.worldBounds()},
+    DrawShapeDragDelegate{
+      m_tool,
+      map.worldBounds(),
+      map.grid().worldToGridMatrix(),
+      map.grid().gridToWorldMatrix()},
     inputState,
     initialHandlePosition,
     initialHandlePosition);

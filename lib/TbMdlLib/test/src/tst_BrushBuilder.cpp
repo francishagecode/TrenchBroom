@@ -313,6 +313,155 @@ TEST_CASE("BrushBuilder")
       | kdl::transform_error([](const auto& e) { FAIL(e); });
   }
 
+  SECTION("createTorus")
+  {
+    auto builder = BrushBuilder{MapFormat::Standard, worldBounds};
+    const auto bounds = vm::bbox3d{{-128, -96, -32}, {128, 96, 32}};
+    const auto shape = TorusShape{
+      .ringSegments = 16u,
+      .tubeSegments = 8u,
+      .holeSize = 0.5,
+    };
+
+    SECTION("Creates one convex brush per ring segment")
+    {
+      builder.createTorus(bounds, shape, vm::axis::z, "someName")
+        | kdl::transform([&](const auto& brushes) {
+            REQUIRE(brushes.size() == shape.ringSegments);
+            CHECK(getMergedBounds(brushes) == bounds);
+            CHECK(std::ranges::all_of(brushes, [](const auto& brush) {
+              return brush.fullySpecified();
+            }));
+            CHECK(std::ranges::none_of(brushes, [](const auto& brush) {
+              return brush.containsPoint({0, 0, 0});
+            }));
+          })
+        | kdl::transform_error([](const auto& e) { FAIL(e); });
+    }
+
+    SECTION("Supports every axis")
+    {
+      for (const auto axis : {vm::axis::x, vm::axis::y, vm::axis::z})
+      {
+        builder.createTorus(bounds, shape, axis, "someName")
+          | kdl::transform([&](const auto& brushes) {
+              CAPTURE(axis);
+              REQUIRE(brushes.size() == shape.ringSegments);
+              CHECK(getMergedBounds(brushes) == bounds);
+            })
+          | kdl::transform_error([](const auto& e) { FAIL(e); });
+      }
+    }
+
+    SECTION("Hole size changes the opening without changing the outer bounds")
+    {
+      auto wideHoleShape = shape;
+      wideHoleShape.holeSize = 0.75;
+
+      builder.createTorus(bounds, wideHoleShape, vm::axis::z, "someName")
+        | kdl::transform([&](const auto& brushes) {
+            CHECK(getMergedBounds(brushes) == bounds);
+            CHECK(std::ranges::none_of(brushes, [](const auto& brush) {
+              return brush.containsPoint({64, 0, 0});
+            }));
+          })
+        | kdl::transform_error([](const auto& e) { FAIL(e); });
+    }
+
+    SECTION("Fits bounds for non-quarter-aligned segment counts")
+    {
+      const auto unevenShape = TorusShape{
+        .ringSegments = 7u,
+        .tubeSegments = 5u,
+        .holeSize = 0.5,
+      };
+
+      builder.createTorus(bounds, unevenShape, vm::axis::z, "someName")
+        | kdl::transform([&](const auto& brushes) {
+            REQUIRE(brushes.size() == unevenShape.ringSegments);
+            CHECK(getMergedBounds(brushes) == bounds);
+          })
+        | kdl::transform_error([](const auto& e) { FAIL(e); });
+    }
+
+    SECTION("Creates a hollow tube as a closed shell")
+    {
+      builder.createHollowTorus(bounds, 8.0, shape, vm::axis::z, "someName")
+        | kdl::transform([&](const auto& brushes) {
+            REQUIRE(brushes.size() == shape.ringSegments * shape.tubeSegments);
+            CHECK(getMergedBounds(brushes) == bounds);
+            CHECK(std::ranges::all_of(brushes, [](const auto& brush) {
+              return brush.fullySpecified();
+            }));
+            CHECK(std::ranges::none_of(brushes, [](const auto& brush) {
+              return brush.containsPoint({0, 0, 0});
+            }));
+            CHECK(std::ranges::none_of(brushes, [](const auto& brush) {
+              return brush.containsPoint({96, 0, 0});
+            }));
+            CHECK(std::ranges::any_of(brushes, [](const auto& brush) {
+              return brush.containsPoint({128, 0, 0});
+            }));
+          })
+        | kdl::transform_error([](const auto& e) { FAIL(e); });
+    }
+
+    SECTION("Hollow torus supports every axis")
+    {
+      for (const auto axis : {vm::axis::x, vm::axis::y, vm::axis::z})
+      {
+        builder.createHollowTorus(bounds, 8.0, shape, axis, "someName")
+          | kdl::transform([&](const auto& brushes) {
+              CAPTURE(axis);
+              REQUIRE(brushes.size() == shape.ringSegments * shape.tubeSegments);
+              CHECK(getMergedBounds(brushes) == bounds);
+            })
+          | kdl::transform_error([](const auto& e) { FAIL(e); });
+      }
+    }
+
+    SECTION("Hollow torus fits its thickness to a small drag preview")
+    {
+      const auto smallBounds = vm::bbox3d{{0, 0, 0}, {16, 16, 16}};
+      builder.createHollowTorus(smallBounds, 16.0, shape, vm::axis::z, "someName")
+        | kdl::transform([&](const auto& brushes) {
+            REQUIRE(brushes.size() == shape.ringSegments * shape.tubeSegments);
+            CHECK(getMergedBounds(brushes) == smallBounds);
+          })
+        | kdl::transform_error([](const auto& e) { FAIL(e); });
+    }
+
+    SECTION("Rejects invalid parameters and degenerate bounds")
+    {
+      auto invalidShape = shape;
+      invalidShape.ringSegments = 2u;
+      CHECK(
+        builder.createTorus(bounds, invalidShape, vm::axis::z, "someName").is_error());
+
+      invalidShape = shape;
+      invalidShape.tubeSegments = 2u;
+      CHECK(
+        builder.createTorus(bounds, invalidShape, vm::axis::z, "someName").is_error());
+
+      invalidShape = shape;
+      invalidShape.holeSize = 0.0;
+      CHECK(
+        builder.createTorus(bounds, invalidShape, vm::axis::z, "someName").is_error());
+
+      invalidShape.holeSize = 1.0;
+      CHECK(
+        builder.createTorus(bounds, invalidShape, vm::axis::z, "someName").is_error());
+
+      CHECK(builder
+              .createTorus(
+                vm::bbox3d{{0, -96, -32}, {0, 96, 32}}, shape, vm::axis::z, "someName")
+              .is_error());
+
+      CHECK(builder.createHollowTorus(bounds, 0.0, shape, vm::axis::z, "someName")
+              .is_error());
+    }
+  }
+
   SECTION("createArch")
   {
     auto builder = BrushBuilder{MapFormat::Standard, worldBounds};

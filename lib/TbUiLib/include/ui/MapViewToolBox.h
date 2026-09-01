@@ -43,6 +43,8 @@ class AssembleBrushTool;
 class BoxSelectionTool;
 class CreateEntityTool;
 class DrawShapeTool;
+class DrawShapeToolExtensionPageRegistry;
+class DrawShapeToolExtensionRegistry;
 class MapDocument;
 class MoveObjectsTool;
 class ExtrudeTool;
@@ -59,6 +61,8 @@ class MapViewToolBox : public ToolBox
 {
 private:
   MapDocument& m_document;
+  const DrawShapeToolExtensionRegistry& m_drawShapeToolExtensionRegistry;
+  const DrawShapeToolExtensionPageRegistry& m_drawShapeToolExtensionPageRegistry;
   QStackedLayout* m_bookCtrl = nullptr;
 
   std::unique_ptr<ClipTool> m_clipTool;
@@ -87,7 +91,11 @@ private:
   NotifierConnection m_notifierConnection;
 
 public:
-  MapViewToolBox(MapDocument& map, QStackedLayout* bookCtrl);
+  MapViewToolBox(
+    MapDocument& map,
+    const DrawShapeToolExtensionRegistry& drawShapeToolExtensionRegistry,
+    const DrawShapeToolExtensionPageRegistry& drawShapeToolExtensionPageRegistry,
+    QStackedLayout* bookCtrl);
   ~MapViewToolBox() override;
 
 public: // tools

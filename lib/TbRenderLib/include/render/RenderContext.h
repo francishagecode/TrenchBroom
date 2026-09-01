@@ -24,6 +24,7 @@
 #include "render/Transformation.h"
 
 #include "vm/bbox.h"
+#include "vm/mat.h"
 
 namespace tb
 {
@@ -84,6 +85,7 @@ private:
 
   bool m_showGrid = true;
   double m_gridSize = 4;
+  vm::mat4x4f m_worldToGrid = vm::mat4x4f::identity();
   float m_dpiScale = 1.0;
 
   bool m_hideSelection = false;
@@ -157,6 +159,9 @@ public:
 
   double gridSize() const;
   void setGridSize(double gridSize);
+
+  const vm::mat4x4f& worldToGridMatrix() const;
+  void setWorldToGridMatrix(const vm::mat4x4f& worldToGrid);
 
   float dpiScale() const;
   void setDpiScale(float dpiScale);

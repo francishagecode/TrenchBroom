@@ -224,6 +224,64 @@ TEST_CASE("DrawShapeToolConeExtension")
   }
 }
 
+TEST_CASE("DrawShapeToolTorusExtension")
+{
+  auto fixture = MapDocumentFixture{};
+  auto& document = fixture.create();
+  auto extension = DrawShapeToolTorusExtension{document};
+  auto parameters = DrawShapeToolParameters{};
+
+  SECTION("Creates a torus with the configured segments")
+  {
+    auto shape = parameters.torusShape();
+    shape.ringSegments = 12u;
+    shape.tubeSegments = 8u;
+    shape.holeSize = 0.5;
+    parameters.setTorusShape(shape);
+
+    const auto bounds = vm::bbox3d{{-128, -96, -32}, {128, 96, 32}};
+    extension.createBrushes(bounds, parameters)
+      | kdl::transform([&](const auto& brushes) {
+          REQUIRE(brushes.size() == shape.ringSegments);
+          CHECK(std::ranges::all_of(brushes, [](const auto& brush) {
+            return brush.fullySpecified();
+          }));
+        })
+      | kdl::transform_error([](const auto& e) { FAIL(e); });
+  }
+
+  SECTION("Supports a one grid unit drag preview")
+  {
+    const auto bounds = vm::bbox3d{{0, 0, 0}, {16, 16, 16}};
+    extension.createBrushes(bounds, parameters)
+      | kdl::transform([&](const auto& brushes) { REQUIRE(brushes.size() == 16u); })
+      | kdl::transform_error([](const auto& e) { FAIL(e); });
+  }
+
+  SECTION("Creates a hollow torus with the configured thickness")
+  {
+    auto shape = parameters.torusShape();
+    shape.ringSegments = 12u;
+    shape.tubeSegments = 8u;
+    parameters.setTorusShape(shape);
+    parameters.setHollow(true);
+    parameters.setThickness(8.0);
+
+    const auto bounds = vm::bbox3d{{-128, -96, -32}, {128, 96, 32}};
+    extension.createBrushes(bounds, parameters)
+      | kdl::transform([&](const auto& brushes) {
+          REQUIRE(brushes.size() == shape.ringSegments * shape.tubeSegments);
+          CHECK(std::ranges::all_of(brushes, [](const auto& brush) {
+            return brush.fullySpecified();
+          }));
+        })
+      | kdl::transform_error([](const auto& e) { FAIL(e); });
+  }
+
+  CHECK(extension.name() == "Torus");
+  CHECK(extension.iconPath() == "ShapeTool_Torus.svg");
+}
+
 TEST_CASE("DrawShapeToolIcoSphereExtension")
 {
   auto fixture = MapDocumentFixture{};
@@ -679,6 +737,13 @@ TEST_CASE("DrawShapeToolParameters")
     REQUIRE(parameters.thickness() == 16.0);
     REQUIRE(parameters.numRings() == 8);
     REQUIRE(parameters.accuracy() == 1);
+    REQUIRE(
+      parameters.torusShape()
+      == mdl::TorusShape{
+        .ringSegments = 16u,
+        .tubeSegments = 8u,
+        .holeSize = 0.5,
+      });
     REQUIRE(parameters.stepHeight() == 16.0);
     REQUIRE(parameters.stairDirection() == DrawShapeToolParameters::StairDirection::PosX);
     REQUIRE(parameters.corridorAxis() == vm::axis::x);
@@ -800,6 +865,26 @@ TEST_CASE("DrawShapeToolParameters")
     CHECK(parametersDidChange.notifications.size() == 1u);
 
     parameters.setAccuracy(2);
+    CHECK(parametersDidChange.notifications.size() == 1u);
+  }
+
+  SECTION("Torus shape modifications")
+  {
+    auto parametersDidChange = Observer<>{parameters.parametersDidChangeNotifier};
+
+    const auto defaultShape = parameters.torusShape();
+    parameters.setTorusShape(defaultShape);
+    CHECK(parametersDidChange.notifications.empty());
+
+    auto changedShape = defaultShape;
+    changedShape.ringSegments = 24u;
+    changedShape.tubeSegments = 12u;
+    changedShape.holeSize = 0.65;
+    parameters.setTorusShape(changedShape);
+    REQUIRE(parameters.torusShape() == changedShape);
+    CHECK(parametersDidChange.notifications.size() == 1u);
+
+    parameters.setTorusShape(changedShape);
     CHECK(parametersDidChange.notifications.size() == 1u);
   }
 

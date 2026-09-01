@@ -30,6 +30,7 @@ uniform bool GrayScale;
 uniform bool RenderGrid;
 uniform float GridSize;
 uniform float GridAlpha;
+uniform mat4 WorldToGridMatrix;
 uniform bool ShadeFaces;
 uniform bool ShowFog;
 
@@ -112,7 +113,8 @@ void main()
 
   if (RenderGrid && GridAlpha > 0.0)
   {
-    vec3 coords = modelCoordinates.xyz;
+    vec3 coords = (WorldToGridMatrix * modelCoordinates).xyz;
+    vec3 gridNormal = mat3(WorldToGridMatrix) * modelNormal.xyz;
 
     // get the maximum distance in world space between this and the neighbouring fragments
     float maxWorldSpaceChange = max(length(dFdx(coords)), length(dFdy(coords)));
@@ -133,7 +135,7 @@ void main()
     float lineWidthFactor = min(4.0 * maxWorldSpaceChange, 1.0);
 
     float gridValue =
-      grid(coords, modelNormal.xyz, GridSize, minGridSize, lineWidthFactor);
+      grid(coords, gridNormal, GridSize, minGridSize, lineWidthFactor);
 
     // Fade the grid out with distance so distant lines don't pile up into visual noise.
     // Ramp the opacity down over the fragment's distance from the camera, in world units.

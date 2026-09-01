@@ -23,8 +23,6 @@
 
 #include "ui/DrawShapeToolExtensionPage.h"
 
-#include <vector>
-
 namespace tb::ui
 {
 class MapDocument;
@@ -78,6 +76,21 @@ public:
 
 private:
   DrawShapeToolParameters& m_parameters;
+  Q_OBJECT
+};
+
+class DrawShapeToolTorusShapeExtensionPage
+  : public DrawShapeToolAxisAlignedShapeExtensionPage
+{
+public:
+  explicit DrawShapeToolTorusShapeExtensionPage(
+    MapDocument& document,
+    DrawShapeToolParameters& parameters,
+    QWidget* parent = nullptr);
+
+private:
+  DrawShapeToolParameters& m_parameters;
+
   Q_OBJECT
 };
 
@@ -205,8 +218,5 @@ private:
 
   Q_OBJECT
 };
-
-std::vector<DrawShapeToolExtensionPage*> createDrawShapeToolExtensionPages(
-  MapDocument& document, DrawShapeToolParameters& parameters, QWidget* parent = nullptr);
 
 } // namespace tb::ui

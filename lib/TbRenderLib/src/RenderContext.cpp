@@ -220,6 +220,16 @@ void RenderContext::setGridSize(const double gridSize)
   m_gridSize = gridSize;
 }
 
+const vm::mat4x4f& RenderContext::worldToGridMatrix() const
+{
+  return m_worldToGrid;
+}
+
+void RenderContext::setWorldToGridMatrix(const vm::mat4x4f& worldToGrid)
+{
+  m_worldToGrid = worldToGrid;
+}
+
 float RenderContext::dpiScale() const
 {
   return m_dpiScale;

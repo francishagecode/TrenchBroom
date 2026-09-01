@@ -135,7 +135,7 @@ DragHandleSnapper makeRelativeHandleSnapper(const mdl::Grid& grid)
            const DragState& dragState,
            const vm::vec3d& proposedHandlePosition) {
     return dragState.initialHandlePosition
-           + grid.snap(proposedHandlePosition - dragState.initialHandlePosition);
+           + grid.snapDelta(proposedHandlePosition - dragState.initialHandlePosition);
   };
 }
 

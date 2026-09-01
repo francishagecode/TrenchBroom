@@ -176,6 +176,13 @@ TEST_CASE("RenderContext")
     CHECK(context.gridSize() == 16.0);
   }
 
+  SECTION("worldToGridMatrix and setWorldToGridMatrix")
+  {
+    const auto matrix = vm::mat4x4f{0, -1, 0, 10, 1, 0, 0, 20, 0, 0, 1, 30, 0, 0, 0, 1};
+    context.setWorldToGridMatrix(matrix);
+    CHECK(context.worldToGridMatrix() == matrix);
+  }
+
   SECTION("dpiScale and setDpiScale")
   {
     context.setDpiScale(2.0f);

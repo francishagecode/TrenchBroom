@@ -346,7 +346,7 @@ struct SlideDragDelegateBase : public HandleDragTrackerDelegate
       }
 
       const auto totalDelta = proposedHandlePosition - dragState.initialHandlePosition;
-      const auto snappedDelta = grid.snap(totalDelta);
+      const auto snappedDelta = grid.snapDelta(totalDelta);
       return dragState.initialHandlePosition + snappedDelta;
     };
   }

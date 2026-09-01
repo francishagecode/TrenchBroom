@@ -19,21 +19,35 @@
 
 #include "ui/DrawShapeToolExtensionManager.h"
 
-#include "ui/DrawShapeToolExtensions.h"
+#include "ui/DrawShapeToolExtensionRegistry.h"
 
 #include "kd/contracts.h"
-#include "kd/ranges/to.h"
 
 #include <ranges>
 
 namespace tb::ui
 {
 
-DrawShapeToolExtensionManager::DrawShapeToolExtensionManager(MapDocument& document)
+DrawShapeToolExtensionManager::DrawShapeToolExtensionManager(
+  MapDocument& document, const DrawShapeToolExtensionRegistry& registry)
   : m_document{document}
-  , m_extensions{createDrawShapeToolExtensions(document)}
 {
+  for (const auto& descriptor : registry.descriptors())
+  {
+    m_extensionInfos.push_back(
+      DrawShapeToolExtensionInfo{
+        .id = descriptor.id,
+        .name = descriptor.name,
+        .iconPath = descriptor.iconPath,
+      });
+    m_parameters.push_back(std::make_unique<DrawShapeToolParameters>());
+    m_extensions.push_back(descriptor.factory(document));
+    contract_post(m_extensions.back() != nullptr);
+  }
+
   contract_pre(!m_extensions.empty());
+  contract_post(m_parameters.size() == m_extensions.size());
+  contract_post(m_extensionInfos.size() == m_extensions.size());
 }
 
 MapDocument& DrawShapeToolExtensionManager::document() const
@@ -41,17 +55,16 @@ MapDocument& DrawShapeToolExtensionManager::document() const
   return m_document;
 }
 
-DrawShapeToolParameters& DrawShapeToolExtensionManager::parameters()
+DrawShapeToolParameters& DrawShapeToolExtensionManager::parameters(const size_t index)
 {
-  return m_parameters;
+  contract_pre(index < m_parameters.size());
+  return *m_parameters[index];
 }
 
-const std::vector<DrawShapeToolExtension*> DrawShapeToolExtensionManager::extensions()
-  const
+const std::vector<DrawShapeToolExtensionInfo>& DrawShapeToolExtensionManager::
+  extensionInfos() const
 {
-  return m_extensions
-         | std::views::transform([](const auto& extension) { return extension.get(); })
-         | kdl::ranges::to<std::vector>();
+  return m_extensionInfos;
 }
 
 const DrawShapeToolExtension& DrawShapeToolExtensionManager::currentExtension() const
@@ -59,8 +72,33 @@ const DrawShapeToolExtension& DrawShapeToolExtensionManager::currentExtension() 
   return *m_extensions[m_currentExtensionIndex];
 }
 
+const DrawShapeToolExtensionInfo& DrawShapeToolExtensionManager::currentExtensionInfo()
+  const
+{
+  return m_extensionInfos[m_currentExtensionIndex];
+}
+
+size_t DrawShapeToolExtensionManager::currentExtensionIndex() const
+{
+  return m_currentExtensionIndex;
+}
+
+bool DrawShapeToolExtensionManager::setCurrentExtension(const std::string_view id)
+{
+  const auto it =
+    std::ranges::find(m_extensionInfos, id, &DrawShapeToolExtensionInfo::id);
+  return it != m_extensionInfos.end()
+           ? setCurrentExtensionIndex(size_t(std::distance(m_extensionInfos.begin(), it)))
+           : false;
+}
+
 bool DrawShapeToolExtensionManager::setCurrentExtensionIndex(size_t currentExtensionIndex)
 {
+  if (currentExtensionIndex >= m_extensions.size())
+  {
+    return false;
+  }
+
   if (currentExtensionIndex != m_currentExtensionIndex)
   {
     m_currentExtensionIndex = currentExtensionIndex;
@@ -74,7 +112,7 @@ bool DrawShapeToolExtensionManager::setCurrentExtensionIndex(size_t currentExten
 Result<std::vector<mdl::Brush>> DrawShapeToolExtensionManager::createBrushes(
   const vm::bbox3d& bounds) const
 {
-  return currentExtension().createBrushes(bounds, m_parameters);
+  return currentExtension().createBrushes(bounds, *m_parameters[m_currentExtensionIndex]);
 }
 
 } // namespace tb::ui
