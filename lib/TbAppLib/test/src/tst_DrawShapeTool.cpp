@@ -18,17 +18,21 @@
  */
 
 #include "base/Error.h"
+#include "base/PreferenceManager.h"
 #include "mdl/BrushNode.h"
+#include "mdl/GroupNode.h"
 #include "mdl/Map.h"
 #include "mdl/Map_Nodes.h"
 #include "mdl/Map_Selection.h"
 #include "mdl/TestFactory.h"
+#include "prefs/Preferences.h"
 #include "ui/DrawShapeTool.h"
 #include "ui/DrawShapeToolExtension.h"
 #include "ui/DrawShapeToolExtensionRegistry.h"
 #include "ui/MapDocument.h"
 #include "ui/MapDocumentFixture.h"
 
+#include "vm/bbox.h"
 #include "vm/mat_ext.h"
 
 #include <algorithm>
@@ -76,6 +80,8 @@ TEST_CASE("DrawShapeTool")
   auto& document = fixture.create();
   auto& map = document.map();
 
+  constexpr auto bounds = vm::bbox3d{{0, 0, 0}, {64, 64, 64}};
+
   SECTION("failed parameter application keeps the current selection")
   {
     const auto registry = DrawShapeToolExtensionRegistry{{
@@ -114,7 +120,7 @@ TEST_CASE("DrawShapeTool")
       * vm::rotation_matrix(vm::vec3d{0, 0, 1}, vm::to_radians(45.0));
 
     tool.update(localBounds, localToWorld);
-    tool.createBrushes();
+    tool.createBrushes(std::nullopt);
 
     REQUIRE(map.selection().nodes.size() == 1u);
     const auto* brushNode = dynamic_cast<const mdl::BrushNode*>(map.selection().nodes[0]);
@@ -128,6 +134,68 @@ TEST_CASE("DrawShapeTool")
         return vm::is_equal(position, expected, vm::Cd::almost_zero());
       }));
     }
+  }
+
+  SECTION("createBrushes groups multiple brushes and names the group after the shape")
+  {
+    const auto registry = createDrawShapeToolExtensionRegistry();
+    auto tool = DrawShapeTool{document, registry};
+
+    REQUIRE(pref(Preferences::GroupBrushesCreatedByShapeTool));
+
+    REQUIRE(tool.extensionManager().setCurrentExtension("builtin.stairs"));
+
+    tool.update(bounds);
+    tool.createBrushes(tool.groupNameForCreatedBrushes());
+
+    const auto& selectedNodes = map.selection().nodes;
+    REQUIRE(selectedNodes.size() == 1);
+
+    auto* groupNode = dynamic_cast<mdl::GroupNode*>(selectedNodes.front());
+    REQUIRE(groupNode != nullptr);
+    CHECK(groupNode->group().name() == "Stairs");
+    CHECK(groupNode->childCount() > 1);
+  }
+
+  SECTION(
+    "createBrushes does not group multiple brushes when "
+    "GroupBrushesCreatedByShapeTool is disabled")
+  {
+    const auto registry = createDrawShapeToolExtensionRegistry();
+    auto tool = DrawShapeTool{document, registry};
+
+    setPref(Preferences::GroupBrushesCreatedByShapeTool, false);
+
+    REQUIRE(tool.extensionManager().setCurrentExtension("builtin.stairs"));
+
+    tool.update(bounds);
+    tool.createBrushes(tool.groupNameForCreatedBrushes());
+
+    const auto& selectedNodes = map.selection().nodes;
+    CHECK(selectedNodes.size() > 1);
+    for (auto* node : selectedNodes)
+    {
+      CHECK(dynamic_cast<mdl::BrushNode*>(node) != nullptr);
+    }
+
+    PreferenceManager::instance().resetToDefault(
+      Preferences::GroupBrushesCreatedByShapeTool);
+  }
+
+  SECTION("createBrushes does not create a group for a single brush")
+  {
+    const auto registry = createDrawShapeToolExtensionRegistry();
+    auto tool = DrawShapeTool{document, registry};
+
+    // Cuboid is the default extension and always creates a single brush.
+    REQUIRE(tool.extensionManager().currentExtension().name() == "Cuboid");
+
+    tool.update(bounds);
+    tool.createBrushes(tool.groupNameForCreatedBrushes());
+
+    const auto& selectedNodes = map.selection().nodes;
+    REQUIRE(selectedNodes.size() == 1);
+    CHECK(dynamic_cast<mdl::BrushNode*>(selectedNodes.front()) != nullptr);
   }
 }
 

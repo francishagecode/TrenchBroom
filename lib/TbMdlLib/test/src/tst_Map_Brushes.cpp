@@ -36,7 +36,11 @@
 #include "mdl/UvAlignment.h"
 #include "mdl/UvCoordSystem.h"
 
+#include "kd/result.h"
+
 #include "vm/approx.h"
+
+#include <limits>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -110,7 +114,7 @@ TEST_CASE("Map_Brushes")
       const size_t thirdFaceIndex = 2u;
 
       deselectAll(map);
-      selectBrushFaces(map, {{brushNode, firstFaceIndex}});
+      selectBrushFaces(map, {{*brushNode, firstFaceIndex}});
 
       setBrushFaceAttributes(
         map,
@@ -143,7 +147,7 @@ TEST_CASE("Map_Brushes")
       }
 
       deselectAll(map);
-      selectBrushFaces(map, {{brushNode, secondFaceIndex}});
+      selectBrushFaces(map, {{*brushNode, secondFaceIndex}});
 
       setBrushFaceAttributes(
         map,
@@ -176,7 +180,7 @@ TEST_CASE("Map_Brushes")
       }
 
       deselectAll(map);
-      selectBrushFaces(map, {{brushNode, thirdFaceIndex}});
+      selectBrushFaces(map, {{*brushNode, thirdFaceIndex}});
 
       setBrushFaceAttributes(map, copyAll(getFace(*brushNode, secondFaceIndex)));
 
@@ -191,7 +195,7 @@ TEST_CASE("Map_Brushes")
         getFace(*brushNode, thirdFaceIndex).surfaceAttributes().contents;
 
       deselectAll(map);
-      selectBrushFaces(map, {{brushNode, secondFaceIndex}});
+      selectBrushFaces(map, {{*brushNode, secondFaceIndex}});
 
       setBrushFaceAttributes(map, copyAll(getFace(*brushNode, firstFaceIndex)));
 
@@ -203,7 +207,7 @@ TEST_CASE("Map_Brushes")
         MatchesBrushFaceAttributes(getFace(*brushNode, firstFaceIndex)));
 
       deselectAll(map);
-      selectBrushFaces(map, {{brushNode, thirdFaceIndex}});
+      selectBrushFaces(map, {{*brushNode, thirdFaceIndex}});
       setBrushFaceAttributes(
         map, copyAllExceptContentFlags(getFace(*brushNode, firstFaceIndex)));
 
@@ -353,7 +357,7 @@ TEST_CASE("Map_Brushes")
       const auto initialX = getFace(*brushNode, faceIndex).uAxis();
       const auto initialY = getFace(*brushNode, faceIndex).vAxis();
 
-      selectBrushFaces(map, {{brushNode, faceIndex}});
+      selectBrushFaces(map, {{*brushNode, faceIndex}});
 
       // NOLINTNEXTLINE(misc-const-correctness)
       for (size_t i = 0; i < 5; ++i)
@@ -413,6 +417,28 @@ TEST_CASE("Map_Brushes")
         }
       }
     }
+
+    SECTION("rejects an invalid value")
+    {
+      auto& map = fixture.create();
+
+      auto* brushNode = createBrushNode(map);
+      addNodes(map, {{&parentForNodes(map), {brushNode}}});
+
+      const size_t faceIndex = 0u;
+      deselectAll(map);
+      selectBrushFaces(map, {{*brushNode, faceIndex}});
+
+      const auto originalFace = getFace(*brushNode, faceIndex);
+      const auto canUndoBefore = map.canUndoCommand();
+
+      const auto nan = std::numeric_limits<float>::quiet_NaN();
+      CHECK(!setBrushFaceAttributes(map, {.rotation = SetValue{nan}}));
+
+      CHECK_THAT(
+        getFace(*brushNode, faceIndex), MatchesBrushFaceAttributes(originalFace));
+      CHECK(map.canUndoCommand() == canUndoBefore);
+    }
   }
 
   SECTION("copyUv")
@@ -429,7 +455,7 @@ TEST_CASE("Map_Brushes")
     REQUIRE(targetFaceIndex);
 
     deselectAll(map);
-    selectBrushFaces(map, {{brushNode, *sourceFaceIndex}});
+    selectBrushFaces(map, {{*brushNode, *sourceFaceIndex}});
     REQUIRE(setBrushFaceAttributes(
       map,
       {
@@ -441,7 +467,7 @@ TEST_CASE("Map_Brushes")
       }));
 
     deselectAll(map);
-    selectBrushFaces(map, {{brushNode, *targetFaceIndex}});
+    selectBrushFaces(map, {{*brushNode, *targetFaceIndex}});
     REQUIRE(setBrushFaceAttributes(
       map,
       {
@@ -515,7 +541,7 @@ TEST_CASE("Map_Brushes")
     REQUIRE(otherFaceIndex);
 
     deselectAll(map);
-    selectBrushFaces(map, {{brushNode, *faceIndex}});
+    selectBrushFaces(map, {{*brushNode, *faceIndex}});
 
     REQUIRE(setBrushFaceAttributes(
       map,
@@ -583,61 +609,87 @@ TEST_CASE("Map_Brushes")
     auto* brushNode = createBrushNode(map);
     addNodes(map, {{&parentForNodes(map), {brushNode}}});
 
-    const auto faceIndex = brushNode->brush().findFace(vm::vec3d{0, 0, 1});
-    REQUIRE(faceIndex);
-
-    const auto otherFaceIndex = brushNode->brush().findFace(vm::vec3d{1, 0, 0});
-    REQUIRE(otherFaceIndex);
-
-    deselectAll(map);
-    selectBrushFaces(map, {{brushNode, *faceIndex}});
-
-    REQUIRE(setBrushFaceAttributes(map, {.rotation = SetValue{10.0f}}));
-
-    const auto originalFace = getFace(*brushNode, *faceIndex);
-    const auto originalUAxis = getFace(*brushNode, *faceIndex).uAxis();
-    const auto originalVAxis = getFace(*brushNode, *faceIndex).vAxis();
-
-    const auto originalOtherFace = getFace(*brushNode, *otherFaceIndex);
-
-    auto expectedBrush = brushNode->brush();
-    expectedBrush.face(*faceIndex).rotateUv(15.0f);
-    const auto expectedFaceCopy = expectedBrush.face(*faceIndex);
-    const auto expectedUAxis = expectedBrush.face(*faceIndex).uAxis();
-    const auto expectedVAxis = expectedBrush.face(*faceIndex).vAxis();
-
-    REQUIRE(rotateUv(map, 15.0f));
-
-    const auto& rotatedFace = getFace(*brushNode, *faceIndex);
-    CHECK_THAT(rotatedFace, MatchesBrushFaceAttributes(expectedFaceCopy));
-    CHECK(rotatedFace.uAxis() == vm::approx{expectedUAxis});
-    CHECK(rotatedFace.vAxis() == vm::approx{expectedVAxis});
-
-    CHECK_THAT(
-      getFace(*brushNode, *otherFaceIndex),
-      MatchesBrushFaceAttributes(originalOtherFace));
-
-    SECTION("Undo and redo")
+    SECTION("accepts valid rotations")
     {
-      map.undoCommand();
+      const auto faceIndex = brushNode->brush().findFace(vm::vec3d{0, 0, 1});
+      REQUIRE(faceIndex);
 
-      const auto& undoneFace = getFace(*brushNode, *faceIndex);
-      CHECK_THAT(undoneFace, MatchesBrushFaceAttributes(originalFace));
-      CHECK(undoneFace.uAxis() == vm::approx{originalUAxis});
-      CHECK(undoneFace.vAxis() == vm::approx{originalVAxis});
+      const auto otherFaceIndex = brushNode->brush().findFace(vm::vec3d{1, 0, 0});
+      REQUIRE(otherFaceIndex);
+
+      deselectAll(map);
+      selectBrushFaces(map, {{*brushNode, *faceIndex}});
+
+      REQUIRE(setBrushFaceAttributes(map, {.rotation = SetValue{10.0f}}));
+
+      const auto originalFace = getFace(*brushNode, *faceIndex);
+      const auto originalUAxis = getFace(*brushNode, *faceIndex).uAxis();
+      const auto originalVAxis = getFace(*brushNode, *faceIndex).vAxis();
+
+      const auto originalOtherFace = getFace(*brushNode, *otherFaceIndex);
+
+      auto expectedBrush = brushNode->brush();
+      REQUIRE(expectedBrush.face(*faceIndex).rotateUv(15.0f).is_success());
+      const auto expectedFaceCopy = expectedBrush.face(*faceIndex);
+      const auto expectedUAxis = expectedBrush.face(*faceIndex).uAxis();
+      const auto expectedVAxis = expectedBrush.face(*faceIndex).vAxis();
+
+      REQUIRE(rotateUv(map, 15.0f));
+
+      const auto& rotatedFace = getFace(*brushNode, *faceIndex);
+      CHECK_THAT(rotatedFace, MatchesBrushFaceAttributes(expectedFaceCopy));
+      CHECK(rotatedFace.uAxis() == vm::approx{expectedUAxis});
+      CHECK(rotatedFace.vAxis() == vm::approx{expectedVAxis});
+
       CHECK_THAT(
         getFace(*brushNode, *otherFaceIndex),
         MatchesBrushFaceAttributes(originalOtherFace));
 
-      map.redoCommand();
+      SECTION("Undo and redo")
+      {
+        map.undoCommand();
 
-      const auto& redoneFace = getFace(*brushNode, *faceIndex);
-      CHECK_THAT(redoneFace, MatchesBrushFaceAttributes(expectedFaceCopy));
-      CHECK(redoneFace.uAxis() == vm::approx{expectedUAxis});
-      CHECK(redoneFace.vAxis() == vm::approx{expectedVAxis});
+        const auto& undoneFace = getFace(*brushNode, *faceIndex);
+        CHECK_THAT(undoneFace, MatchesBrushFaceAttributes(originalFace));
+        CHECK(undoneFace.uAxis() == vm::approx{originalUAxis});
+        CHECK(undoneFace.vAxis() == vm::approx{originalVAxis});
+        CHECK_THAT(
+          getFace(*brushNode, *otherFaceIndex),
+          MatchesBrushFaceAttributes(originalOtherFace));
+
+        map.redoCommand();
+
+        const auto& redoneFace = getFace(*brushNode, *faceIndex);
+        CHECK_THAT(redoneFace, MatchesBrushFaceAttributes(expectedFaceCopy));
+        CHECK(redoneFace.uAxis() == vm::approx{expectedUAxis});
+        CHECK(redoneFace.vAxis() == vm::approx{expectedVAxis});
+        CHECK_THAT(
+          getFace(*brushNode, *otherFaceIndex),
+          MatchesBrushFaceAttributes(originalOtherFace));
+      }
+    }
+
+    SECTION("rejects an invalid rotations")
+    {
+      const auto faceIndex = brushNode->brush().findFace(vm::vec3d{0, 0, 1});
+      REQUIRE(faceIndex);
+
+      deselectAll(map);
+      selectBrushFaces(map, {{*brushNode, *faceIndex}});
+
+      const auto max = std::numeric_limits<float>::max();
+      REQUIRE(setBrushFaceAttributes(map, {.rotation = SetValue{max}}));
+
+      const auto originalFace = getFace(*brushNode, *faceIndex);
+      const auto canUndoBefore = map.canUndoCommand();
+
+      // rotating the already-huge rotation by another huge angle overflows it to
+      // infinity -- this is the original crash this branch set out to fix
+      CHECK(!rotateUv(map, max));
+
       CHECK_THAT(
-        getFace(*brushNode, *otherFaceIndex),
-        MatchesBrushFaceAttributes(originalOtherFace));
+        getFace(*brushNode, *faceIndex), MatchesBrushFaceAttributes(originalFace));
+      CHECK(map.canUndoCommand() == canUndoBefore);
     }
   }
 
@@ -655,7 +707,7 @@ TEST_CASE("Map_Brushes")
     REQUIRE(otherFaceIndex);
 
     deselectAll(map);
-    selectBrushFaces(map, {{brushNode, *faceIndex}});
+    selectBrushFaces(map, {{*brushNode, *faceIndex}});
 
     const auto factors = vm::vec2f{0.25f, -0.5f};
 
@@ -720,7 +772,7 @@ TEST_CASE("Map_Brushes")
     REQUIRE(otherFaceIndex);
 
     deselectAll(map);
-    selectBrushFaces(map, {{brushNode, *faceIndex}});
+    selectBrushFaces(map, {{*brushNode, *faceIndex}});
 
     REQUIRE(setBrushFaceAttributes(
       map,
@@ -795,7 +847,7 @@ TEST_CASE("Map_Brushes")
     REQUIRE(otherFaceIndex);
 
     deselectAll(map);
-    selectBrushFaces(map, {{brushNode, *faceIndex}});
+    selectBrushFaces(map, {{*brushNode, *faceIndex}});
 
     REQUIRE(setBrushFaceAttributes(map, {.rotation = SetValue{0.0f}}));
 
@@ -808,7 +860,8 @@ TEST_CASE("Map_Brushes")
     auto expectedBrush = brushNode->brush();
     evaluate(
       align(expectedBrush.face(*faceIndex), UvPolicy::next),
-      expectedBrush.face(*faceIndex));
+      expectedBrush.face(*faceIndex))
+      | kdl::ignore();
     const auto expectedFaceCopy = expectedBrush.face(*faceIndex);
     const auto expectedUAxis = expectedBrush.face(*faceIndex).uAxis();
     const auto expectedVAxis = expectedBrush.face(*faceIndex).vAxis();
@@ -863,7 +916,7 @@ TEST_CASE("Map_Brushes")
     REQUIRE(otherFaceIndex);
 
     deselectAll(map);
-    selectBrushFaces(map, {{brushNode, *faceIndex}});
+    selectBrushFaces(map, {{*brushNode, *faceIndex}});
 
     REQUIRE(setBrushFaceAttributes(
       map,
@@ -881,7 +934,8 @@ TEST_CASE("Map_Brushes")
     auto expectedBrush = brushNode->brush();
     evaluate(
       justify(expectedBrush.face(*faceIndex), UvAxis::u, UvSign::plus, UvPolicy::best),
-      expectedBrush.face(*faceIndex));
+      expectedBrush.face(*faceIndex))
+      | kdl::ignore();
     const auto expectedFaceCopy = expectedBrush.face(*faceIndex);
     const auto expectedUAxis = expectedBrush.face(*faceIndex).uAxis();
     const auto expectedVAxis = expectedBrush.face(*faceIndex).vAxis();
@@ -936,7 +990,7 @@ TEST_CASE("Map_Brushes")
     REQUIRE(otherFaceIndex);
 
     deselectAll(map);
-    selectBrushFaces(map, {{brushNode, *faceIndex}});
+    selectBrushFaces(map, {{*brushNode, *faceIndex}});
 
     REQUIRE(setBrushFaceAttributes(
       map,
@@ -962,7 +1016,8 @@ TEST_CASE("Map_Brushes")
       * invariantVertex};
 
     evaluate(
-      fit(expectedFace, UvAxis::u, UvPolicy::next, UvFitMode::fitToFace), expectedFace);
+      fit(expectedFace, UvAxis::u, UvPolicy::next, UvFitMode::fitToFace), expectedFace)
+      | kdl::ignore();
 
     const auto newUvCoords = vm::vec2f{
       expectedFace.toUvCoordSystemMatrix(
@@ -975,7 +1030,8 @@ TEST_CASE("Map_Brushes")
         .xOffset = AddValue{delta.x()},
         .yOffset = AddValue{delta.y()},
       },
-      expectedFace);
+      expectedFace)
+      | kdl::ignore();
 
     const auto expectedUAxis = expectedFace.uAxis();
     const auto expectedVAxis = expectedFace.vAxis();
@@ -1036,7 +1092,7 @@ TEST_CASE("Map_Brushes")
     {
       // front face is not aligned (rotation == 15)
       deselectAll(map);
-      selectBrushFaces(map, {{brushNode, iFront}});
+      selectBrushFaces(map, {{*brushNode, iFront}});
       REQUIRE(setBrushFaceAttributes(
         map,
         {
@@ -1049,7 +1105,7 @@ TEST_CASE("Map_Brushes")
 
       // right face is aligned (rotation == 0)
       deselectAll(map);
-      selectBrushFaces(map, {{brushNode, iRight}});
+      selectBrushFaces(map, {{*brushNode, iRight}});
       REQUIRE(setBrushFaceAttributes(
         map,
         {
@@ -1067,7 +1123,7 @@ TEST_CASE("Map_Brushes")
       const auto originalTopFace = getFace(*brushNode, iTop);
 
       deselectAll(map);
-      selectBrushFaces(map, {{brushNode, iFront}, {brushNode, iRight}});
+      selectBrushFaces(map, {{*brushNode, iFront}, {*brushNode, iRight}});
       autoFitUv(map);
 
       // front face is now aligned
@@ -1086,7 +1142,7 @@ TEST_CASE("Map_Brushes")
       "Does not realign when selected faces are aligned but not all fitted and justified")
     {
       deselectAll(map);
-      selectBrushFaces(map, {{brushNode, iFront}});
+      selectBrushFaces(map, {{*brushNode, iFront}});
       REQUIRE(setBrushFaceAttributes(
         map,
         {
@@ -1098,7 +1154,7 @@ TEST_CASE("Map_Brushes")
         }));
 
       deselectAll(map);
-      selectBrushFaces(map, {{brushNode, iRight}});
+      selectBrushFaces(map, {{*brushNode, iRight}});
       REQUIRE(setBrushFaceAttributes(
         map,
         {
@@ -1110,7 +1166,7 @@ TEST_CASE("Map_Brushes")
         }));
 
       deselectAll(map);
-      selectBrushFaces(map, {{brushNode, iFront}, {brushNode, iRight}});
+      selectBrushFaces(map, {{*brushNode, iFront}, {*brushNode, iRight}});
 
       REQUIRE(isAligned(getFace(*brushNode, iFront)));
       REQUIRE(!isJustified(getFace(*brushNode, iFront), UvAxis::u, UvSign::plus));
@@ -1150,7 +1206,7 @@ TEST_CASE("Map_Brushes")
     SECTION("Undo and Redo")
     {
       deselectAll(map);
-      selectBrushFaces(map, {{brushNode, iFront}});
+      selectBrushFaces(map, {{*brushNode, iFront}});
       REQUIRE(setBrushFaceAttributes(
         map,
         {
@@ -1162,7 +1218,7 @@ TEST_CASE("Map_Brushes")
         }));
 
       deselectAll(map);
-      selectBrushFaces(map, {{brushNode, iRight}});
+      selectBrushFaces(map, {{*brushNode, iRight}});
       REQUIRE(setBrushFaceAttributes(
         map,
         {
@@ -1177,7 +1233,7 @@ TEST_CASE("Map_Brushes")
       const auto originalRightFace = getFace(*brushNode, iRight);
 
       deselectAll(map);
-      selectBrushFaces(map, {{brushNode, iFront}, {brushNode, iRight}});
+      selectBrushFaces(map, {{*brushNode, iFront}, {*brushNode, iRight}});
       autoFitUv(map);
 
       const auto modifiedFrontFace = getFace(*brushNode, iFront);

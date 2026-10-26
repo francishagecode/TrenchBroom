@@ -20,6 +20,7 @@
 #include "mdl/GameManager.h"
 
 #include "base/Logger.h"
+#include "el/Value.h"
 #include "fs/DiskFileSystem.h"
 #include "fs/DiskIO.h"
 #include "fs/PathInfo.h"
@@ -33,6 +34,7 @@
 #include "kd/const_overload.h"
 #include "kd/path_utils.h"
 #include "kd/result_fold.h"
+#include "kd/string_compare_natural.h"
 
 #include <algorithm>
 #include <iostream>
@@ -268,7 +270,9 @@ Result<bool> writeConfig(
 
   return fs.createDirectory(profilesPath.parent_path()) | kdl::and_then([&](auto) {
            auto stream = std::stringstream{};
-           stream << toValue(newConfig) << "\n";
+           toValue(newConfig).appendToStream(
+             stream, true, "", el::StringEscaping::Legacy);
+           stream << "\n";
            return fs.createFileAtomic(profilesPath, stream.str());
          })
          | kdl::transform([&]() {
@@ -321,9 +325,10 @@ GameManager::GameManager(
   : m_configFs{std::move(configFs)}
   , m_gameInfos{std::move(gameInfos)}
 {
-  std::ranges::sort(m_gameInfos, [](const auto& lhs, const auto& rhs) {
-    return lhs.gameConfig.name < rhs.gameConfig.name;
-  });
+  std::ranges::sort(
+    m_gameInfos, kdl::ci::string_less_natural{}, [](const auto& gameInfo) {
+      return gameInfo.gameConfig.name;
+    });
 }
 
 GameManager::GameManager(GameManager&&) noexcept = default;

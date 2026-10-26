@@ -192,7 +192,7 @@ TEST_CASE("SelectionTool")
           {
             CHECK(
               map.selection().brushFaces
-              == std::vector<mdl::BrushFaceHandle>{{brushNode, topFaceIndex}});
+              == std::vector<mdl::BrushFaceHandle>{{*brushNode, topFaceIndex}});
             CHECK(!map.selection().hasNodes());
           }
 
@@ -207,7 +207,7 @@ TEST_CASE("SelectionTool")
             {
               CHECK(
                 map.selection().brushFaces
-                == std::vector<mdl::BrushFaceHandle>{{brushNode, topFaceIndex}});
+                == std::vector<mdl::BrushFaceHandle>{{*brushNode, topFaceIndex}});
               CHECK(!map.selection().hasNodes());
             }
           }
@@ -296,7 +296,7 @@ TEST_CASE("SelectionTool")
 
         AND_GIVEN("The front face of the brush is selected")
         {
-          selectBrushFaces(map, {{brushNode, frontFaceIndex}});
+          selectBrushFaces(map, {{*brushNode, frontFaceIndex}});
 
           WHEN("I shift click once")
           {
@@ -309,7 +309,7 @@ TEST_CASE("SelectionTool")
             {
               CHECK(
                 map.selection().brushFaces
-                == std::vector<mdl::BrushFaceHandle>{{brushNode, topFaceIndex}});
+                == std::vector<mdl::BrushFaceHandle>{{*brushNode, topFaceIndex}});
               CHECK(!map.selection().hasNodes());
             }
           }
@@ -326,7 +326,7 @@ TEST_CASE("SelectionTool")
               CHECK_THAT(
                 map.selection().brushFaces,
                 UnorderedEquals(std::vector<mdl::BrushFaceHandle>{
-                  {brushNode, topFaceIndex}, {brushNode, frontFaceIndex}}));
+                  {*brushNode, topFaceIndex}, {*brushNode, frontFaceIndex}}));
               CHECK(!map.selection().hasNodes());
             }
           }
@@ -356,7 +356,7 @@ TEST_CASE("SelectionTool")
 
             const auto coplanarTopFaceIndex =
               *coplanarBrushNode->brush().findFace("top_face");
-            mdl::selectBrushFaces(map, {{brushNode, frontFaceIndex}});
+            mdl::selectBrushFaces(map, {{*brushNode, frontFaceIndex}});
 
             AND_WHEN("I select all adjacent coplanar faces")
             {
@@ -370,8 +370,8 @@ TEST_CASE("SelectionTool")
                 CHECK_THAT(
                   map.selection().brushFaces,
                   UnorderedEquals(std::vector<mdl::BrushFaceHandle>{
-                    {brushNode, topFaceIndex},
-                    {coplanarBrushNode, coplanarTopFaceIndex}}));
+                    {*brushNode, topFaceIndex},
+                    {*coplanarBrushNode, coplanarTopFaceIndex}}));
                 CHECK(!map.selection().hasNodes());
               }
             }
@@ -389,9 +389,9 @@ TEST_CASE("SelectionTool")
                 CHECK_THAT(
                   map.selection().brushFaces,
                   UnorderedEquals(std::vector<mdl::BrushFaceHandle>{
-                    {brushNode, frontFaceIndex},
-                    {brushNode, topFaceIndex},
-                    {coplanarBrushNode, coplanarTopFaceIndex}}));
+                    {*brushNode, frontFaceIndex},
+                    {*brushNode, topFaceIndex},
+                    {*coplanarBrushNode, coplanarTopFaceIndex}}));
                 CHECK(!map.selection().hasNodes());
               }
             }
@@ -440,7 +440,7 @@ TEST_CASE("SelectionTool")
             {
               CHECK(
                 map.selection().brushFaces
-                == std::vector<mdl::BrushFaceHandle>{{brushNode, topFaceIndex}});
+                == std::vector<mdl::BrushFaceHandle>{{*brushNode, topFaceIndex}});
               CHECK(!map.selection().hasNodes());
             }
           }
@@ -456,7 +456,7 @@ TEST_CASE("SelectionTool")
             {
               CHECK(
                 map.selection().brushFaces
-                == std::vector<mdl::BrushFaceHandle>{{brushNode, topFaceIndex}});
+                == std::vector<mdl::BrushFaceHandle>{{*brushNode, topFaceIndex}});
               CHECK(!map.selection().hasNodes());
             }
           }
@@ -530,6 +530,166 @@ TEST_CASE("SelectionTool")
               CHECK(map.selection().brushFaces.empty());
               CHECK(!map.selection().hasNodes());
             }
+          }
+        }
+      }
+    }
+
+    GIVEN("A selected node")
+    {
+      auto* entityNode = new mdl::EntityNode{mdl::Entity{{{"origin", "64 0 0"}}}};
+
+      addNodes(map, {{&parentForNodes(map), {entityNode}}});
+      mdl::selectNodes(map, {entityNode});
+
+      auto camera = gl::OrthographicCamera{};
+
+      AND_GIVEN("A pick ray that points into the void")
+      {
+        camera.moveTo({0, 0, 32});
+        camera.setDirection({0, 0, 1}, {0, 1, 0});
+
+        const auto pickRay = vm::ray3d{camera.pickRay({0, 0, 0})};
+
+        auto pickResult = mdl::PickResult{};
+        pick(map, pickRay, pickResult);
+        REQUIRE(pickResult.all().empty());
+
+        REQUIRE(map.selection().nodes == std::vector<mdl::Node*>{entityNode});
+
+        auto inputState = InputState{0.0f, 0.0f};
+        inputState.setPickRequest({pickRay, camera});
+        inputState.setPickResult(std::move(pickResult));
+
+        WHEN("I shift click once")
+        {
+          inputState.setModifierKeys(ModifierKeys::Shift);
+          inputState.mouseDown(MouseButtons::Left);
+          tool.mouseClick(inputState);
+          inputState.mouseUp(MouseButtons::Left);
+
+          THEN("The node is deselected")
+          {
+            CHECK(!map.selection().hasNodes());
+          }
+        }
+
+        WHEN("I shift+ctrl click once")
+        {
+          inputState.setModifierKeys(ModifierKeys::Shift | ModifierKeys::CtrlCmd);
+          inputState.mouseDown(MouseButtons::Left);
+          tool.mouseClick(inputState);
+          inputState.mouseUp(MouseButtons::Left);
+
+          THEN("Nothing happens")
+          {
+            CHECK(map.selection().nodes == std::vector<mdl::Node*>{entityNode});
+          }
+        }
+
+        WHEN("I click once")
+        {
+          inputState.mouseDown(MouseButtons::Left);
+          tool.mouseClick(inputState);
+          inputState.mouseUp(MouseButtons::Left);
+
+          THEN("The node is deselected")
+          {
+            CHECK(!map.selection().hasNodes());
+          }
+        }
+
+        WHEN("I ctrl click once")
+        {
+          inputState.setModifierKeys(ModifierKeys::CtrlCmd);
+          inputState.mouseDown(MouseButtons::Left);
+          tool.mouseClick(inputState);
+          inputState.mouseUp(MouseButtons::Left);
+
+          THEN("Nothing happens")
+          {
+            CHECK(map.selection().nodes == std::vector<mdl::Node*>{entityNode});
+          }
+        }
+      }
+    }
+
+    GIVEN("A selected brush face")
+    {
+      auto* brushNode =
+        new mdl::BrushNode{builder.createCube(32.0, "some_face") | kdl::value()};
+      const auto faceHandle = mdl::BrushFaceHandle{*brushNode, 0};
+
+      addNodes(map, {{&parentForNodes(map), {brushNode}}});
+      mdl::selectBrushFaces(map, {faceHandle});
+
+      auto camera = gl::OrthographicCamera{};
+
+      AND_GIVEN("A pick ray that points into the void")
+      {
+        camera.moveTo({0, 0, 32});
+        camera.setDirection({0, 0, 1}, {0, 1, 0});
+
+        const auto pickRay = vm::ray3d{camera.pickRay({0, 0, 0})};
+
+        auto pickResult = mdl::PickResult{};
+        pick(map, pickRay, pickResult);
+        REQUIRE(pickResult.all().empty());
+
+        REQUIRE(map.selection().brushFaces == std::vector{faceHandle});
+
+        auto inputState = InputState{0.0f, 0.0f};
+        inputState.setPickRequest({pickRay, camera});
+        inputState.setPickResult(std::move(pickResult));
+
+        WHEN("I shift click once")
+        {
+          inputState.setModifierKeys(ModifierKeys::Shift);
+          inputState.mouseDown(MouseButtons::Left);
+          tool.mouseClick(inputState);
+          inputState.mouseUp(MouseButtons::Left);
+
+          THEN("The face is deselected")
+          {
+            CHECK(map.selection().brushFaces.empty());
+          }
+        }
+
+        WHEN("I shift+ctrl click once")
+        {
+          inputState.setModifierKeys(ModifierKeys::Shift | ModifierKeys::CtrlCmd);
+          inputState.mouseDown(MouseButtons::Left);
+          tool.mouseClick(inputState);
+          inputState.mouseUp(MouseButtons::Left);
+
+          THEN("Nothing happens")
+          {
+            CHECK(map.selection().brushFaces == std::vector{faceHandle});
+          }
+        }
+
+        WHEN("I click once")
+        {
+          inputState.mouseDown(MouseButtons::Left);
+          tool.mouseClick(inputState);
+          inputState.mouseUp(MouseButtons::Left);
+
+          THEN("The face is deselected")
+          {
+            CHECK(map.selection().brushFaces.empty());
+          }
+        }
+
+        WHEN("I ctrl click once")
+        {
+          inputState.setModifierKeys(ModifierKeys::CtrlCmd);
+          inputState.mouseDown(MouseButtons::Left);
+          tool.mouseClick(inputState);
+          inputState.mouseUp(MouseButtons::Left);
+
+          THEN("Nothing happens")
+          {
+            CHECK(map.selection().brushFaces == std::vector{faceHandle});
           }
         }
       }
@@ -617,7 +777,7 @@ TEST_CASE("SelectionTool")
             CHECK(
               map.selection().brushFaces
               == std::vector<mdl::BrushFaceHandle>{
-                {visibleBrushNode, visibleTopFaceIndex}});
+                {*visibleBrushNode, visibleTopFaceIndex}});
           }
         }
 
@@ -799,7 +959,7 @@ TEST_CASE("SelectionTool")
         {
           CHECK(
             map.selection().brushFaces
-            == std::vector<mdl::BrushFaceHandle>{{brushNode, topFaceIndex}});
+            == std::vector<mdl::BrushFaceHandle>{{*brushNode, topFaceIndex}});
         }
 
         AND_WHEN("The drag moves onto the front face")
@@ -809,7 +969,7 @@ TEST_CASE("SelectionTool")
             mdl::BrushNode::BrushHitType,
             0.0,
             vm::vec3d{0, 0, 0},
-            mdl::BrushFaceHandle{brushNode, frontFaceIndex}});
+            mdl::BrushFaceHandle{*brushNode, frontFaceIndex}});
 
           auto dragInputState = InputState{0.0f, 0.0f};
           dragInputState.setPickRequest({pickRay, camera});
@@ -824,7 +984,7 @@ TEST_CASE("SelectionTool")
             CHECK_THAT(
               map.selection().brushFaces,
               UnorderedEquals(std::vector<mdl::BrushFaceHandle>{
-                {brushNode, topFaceIndex}, {brushNode, frontFaceIndex}}));
+                {*brushNode, topFaceIndex}, {*brushNode, frontFaceIndex}}));
           }
 
           tracker->end(dragInputState);

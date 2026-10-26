@@ -25,6 +25,7 @@
 #include "mdl/EntityModel.h"
 #include "mdl/LoadAssimpModel.h"
 
+#include "kd/ranges/contains.h"
 #include "kd/ranges/stride_view.h"
 
 #include "vm/approx.h"
@@ -69,6 +70,29 @@ TEST_CASE("loadAssimpModel")
     }
   }
 
+  SECTION("pitch type")
+  {
+    const auto [modelPath, expectedPitchType] =
+      GENERATE(table<std::filesystem::path, PitchType>({
+        {"cube/cube.mdl", PitchType::MdlInverted},
+        {"alignment/ase/cuboid.ase", PitchType::Normal},
+        {"alignment/obj/cuboid.obj", PitchType::Normal},
+        {"alignment/fbx/cuboid.fbx", PitchType::Normal},
+        {"alignment/gltf/cuboid.gltf", PitchType::Normal},
+        {"alignment/glb/cuboid.glb", PitchType::Normal},
+      }));
+
+    CAPTURE(modelPath);
+
+    const auto basePath = getFixtureRoot() / "test/mdl/LoadAssimpModel";
+    auto fs = fs::DiskFileSystem{basePath};
+
+    auto modelData = loadAssimpModel(modelPath, fs, logger);
+    REQUIRE(modelData);
+
+    CHECK(modelData.value().pitchType() == expectedPitchType);
+  }
+
   SECTION("alignment")
   {
     const auto modelPath = GENERATE(values<std::filesystem::path>({
@@ -94,6 +118,27 @@ TEST_CASE("loadAssimpModel")
     CHECK(vm::approx(modelData.value().bounds(0)) == vm::bbox3f{{0, 0, 0}, {2, 1, 3}});
   }
 
+  SECTION("model with additive texture")
+  {
+    const auto basePath = getFixtureRoot() / "test/mdl/LoadAssimpModel/additiveTexture";
+    auto fs = fs::DiskFileSystem{basePath};
+
+    auto modelData = loadAssimpModel("additive.mdl", fs, logger);
+    REQUIRE(modelData);
+    REQUIRE(modelData.value().surfaceCount() > 0);
+
+    for (size_t i = 0; i < modelData.value().surfaceCount(); ++i)
+    {
+      const auto& surface = modelData.value().surface(i);
+      REQUIRE(surface.skinCount() > 0);
+
+      CHECK(
+        surface.skin(0)->effectiveBlendFunc()
+        == gl::MaterialBlendFunc{
+          gl::MaterialBlendFunc::Enable::UseFactors, GL_ONE, GL_ONE});
+    }
+  }
+
   SECTION("model with mask texture")
   {
     const auto basePath =
@@ -115,11 +160,30 @@ TEST_CASE("loadAssimpModel")
     const auto pixels = std::ranges::subrange{image.data(), image.data() + image.size()};
     const auto alphas = pixels | std::views::drop(3) | kdl::views::stride(4);
 
-    const auto hasTransparentPixel = std::ranges::find(alphas, 0) != alphas.end();
-    const auto hasOpaquePixel = std::ranges::find(alphas, 255) != alphas.end();
+    const auto hasTransparentPixel = kdl::ranges::contains(alphas, 0);
+    const auto hasOpaquePixel = kdl::ranges::contains(alphas, 255);
 
     CHECK(hasTransparentPixel);
     CHECK(hasOpaquePixel);
+
+    // aiTexel carries real per-texel alpha alongside the chroma-key mask, so classify the
+    // actual resulting buffer rather than assuming a binary cutout
+    const auto hasIntermediateAlpha =
+      std::ranges::any_of(alphas, [](const auto a) { return a != 0 && a != 255; });
+
+    const auto* skin = modelData.value().surface(0).skin(0);
+    if (hasIntermediateAlpha)
+    {
+      CHECK(texture->alphaDomain() == img::ImageAlphaDomain::Graduated);
+      CHECK(!skin->effectiveAlphaFunc());
+      CHECK(
+        skin->effectiveBlendFunc().enable == gl::MaterialBlendFunc::Enable::UseFactors);
+    }
+    else
+    {
+      CHECK(texture->alphaDomain() == img::ImageAlphaDomain::Binary);
+      CHECK(skin->effectiveAlphaFunc());
+    }
   }
 
   SECTION("non ascii diffuse texture path")

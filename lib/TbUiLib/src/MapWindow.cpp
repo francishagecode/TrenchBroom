@@ -1013,7 +1013,7 @@ bool MapWindow::saveDocument()
                  this,
                  "",
                  QString::fromStdString(
-                   fmt::format("Error while saving {}: ", map.path(), e.msg)),
+                   fmt::format("Error while saving {}: {}", map.path(), e.msg)),
                  QMessageBox::Ok);
              })
            | kdl::is_success();

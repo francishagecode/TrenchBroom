@@ -25,6 +25,8 @@
 #include <QStackedLayout>
 #include <QToolButton>
 
+#include "base/PreferenceManager.h"
+#include "prefs/Preferences.h"
 #include "ui/BitmapButton.h"
 #include "ui/DrawShapeToolExtensionManager.h"
 #include "ui/DrawShapeToolExtensionPageRegistry.h"
@@ -45,6 +47,9 @@ DrawShapeToolPage::DrawShapeToolPage(
   createGui();
   m_notifierConnection += m_extensionManager.currentExtensionDidChangeNotifier.connect(
     this, &DrawShapeToolPage::currentExtensionDidChange);
+  m_notifierConnection +=
+    PreferenceManager::instance().preferenceDidChangeNotifier.connect(
+      this, &DrawShapeToolPage::preferenceDidChange);
 }
 
 void DrawShapeToolPage::createGui()
@@ -85,12 +90,21 @@ void DrawShapeToolPage::createGui()
     m_extensionManager.parameters(i).parametersDidChangeNotifier();
   }
 
+  m_groupButton = createBitmapToggleButton(
+    "Group.svg",
+    tr("Group the created brushes if the shape consists of more than one brush"));
+  m_groupButton->setChecked(pref(Preferences::GroupBrushesCreatedByShapeTool));
+  connect(m_groupButton, &QToolButton::toggled, this, [](const auto groupCreatedBrushes) {
+    setPref(Preferences::GroupBrushesCreatedByShapeTool, groupCreatedBrushes);
+  });
+
   auto* layout = new QHBoxLayout();
   layout->setContentsMargins(QMargins{});
   layout->setSpacing(LayoutConstants::MediumHMargin);
 
   layout->addWidget(label, 0, Qt::AlignVCenter);
   layout->addWidget(m_extensionButton, 0, Qt::AlignVCenter);
+  layout->addWidget(m_groupButton, 0, Qt::AlignVCenter);
   layout->addLayout(m_extensionPages);
   layout->addStretch(2);
 
@@ -102,6 +116,14 @@ void DrawShapeToolPage::currentExtensionDidChange(const size_t index)
   auto icon = loadSVGIcon(m_extensionManager.currentExtensionInfo().iconPath);
   m_extensionButton->setIcon(icon);
   m_extensionPages->setCurrentIndex(int(index));
+}
+
+void DrawShapeToolPage::preferenceDidChange(const std::filesystem::path& path)
+{
+  if (path == Preferences::GroupBrushesCreatedByShapeTool.path)
+  {
+    m_groupButton->setChecked(pref(Preferences::GroupBrushesCreatedByShapeTool));
+  }
 }
 
 } // namespace tb::ui

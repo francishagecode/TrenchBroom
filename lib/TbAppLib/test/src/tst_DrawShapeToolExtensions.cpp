@@ -25,7 +25,7 @@
 #include "ui/DrawShapeToolParameters.h"
 #include "ui/MapDocumentFixture.h"
 
-#include "kd/range_fold.h"
+#include "kd/ranges/fold.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -524,12 +524,25 @@ TEST_CASE("DrawShapeToolArchExtension")
           CHECK(brushes.size() == 5u);
 
           CHECK(
-            kdl::fold_left_first(
+            kdl::ranges::fold_left_first(
               brushes
                 | std::views::transform([](const auto& brush) { return brush.bounds(); }),
               [](const auto& lhs, const auto& rhs) { return vm::merge(lhs, rhs); })
             == bounds);
         })
+      | kdl::transform_error([](const auto& e) { FAIL(e); });
+  }
+
+  SECTION("createBrushes wires createSpandrel to the brush builder")
+  {
+    const auto bounds = vm::bbox3d{{-128, -64, 0}, {128, 64, 64}};
+    parameters.setAxis(vm::axis::y);
+    parameters.setCircleShape(mdl::EdgeAlignedCircle{8});
+    parameters.setThickness(16.0);
+    parameters.setCreateSpandrel(true);
+
+    extension.createBrushes(bounds, parameters)
+      | kdl::transform([&](const auto& brushes) { CHECK(brushes.size() == 7u); })
       | kdl::transform_error([](const auto& e) { FAIL(e); });
   }
 }
@@ -549,7 +562,7 @@ TEST_CASE("DrawShapeToolCorridorExtension")
       | kdl::transform([&](const auto& brushes) {
           CHECK(brushes.size() == 24u);
           CHECK(
-            kdl::fold_left_first(
+            kdl::ranges::fold_left_first(
               brushes
                 | std::views::transform([](const auto& brush) { return brush.bounds(); }),
               [](const auto& lhs, const auto& rhs) { return vm::merge(lhs, rhs); })
@@ -565,7 +578,7 @@ TEST_CASE("DrawShapeToolCorridorExtension")
       | kdl::transform([&](const auto& brushes) {
           REQUIRE(!brushes.empty());
           CHECK(
-            kdl::fold_left_first(
+            kdl::ranges::fold_left_first(
               brushes
                 | std::views::transform([](const auto& brush) { return brush.bounds(); }),
               [](const auto& lhs, const auto& rhs) { return vm::merge(lhs, rhs); })
@@ -637,7 +650,7 @@ TEST_CASE("DrawShapeToolCorridorTJunctionExtension")
   extension.createBrushes(bounds, parameters) | kdl::transform([&](const auto& brushes) {
     CHECK(brushes.size() == 87u);
     CHECK(
-      kdl::fold_left_first(
+      kdl::ranges::fold_left_first(
         brushes | std::views::transform([](const auto& brush) { return brush.bounds(); }),
         [](const auto& lhs, const auto& rhs) { return vm::merge(lhs, rhs); })
       == bounds);
@@ -650,7 +663,7 @@ TEST_CASE("DrawShapeToolCorridorTJunctionExtension")
       | kdl::transform([&](const auto& brushes) {
           REQUIRE(!brushes.empty());
           CHECK(
-            kdl::fold_left_first(
+            kdl::ranges::fold_left_first(
               brushes
                 | std::views::transform([](const auto& brush) { return brush.bounds(); }),
               [](const auto& lhs, const auto& rhs) { return vm::merge(lhs, rhs); })
@@ -677,7 +690,7 @@ TEST_CASE("DrawShapeToolChamberExtension")
       | kdl::transform([&](const auto& brushes) {
           CHECK(brushes.size() == 12u);
           CHECK(
-            kdl::fold_left_first(
+            kdl::ranges::fold_left_first(
               brushes
                 | std::views::transform([](const auto& brush) { return brush.bounds(); }),
               [](const auto& lhs, const auto& rhs) { return vm::merge(lhs, rhs); })
@@ -697,7 +710,7 @@ TEST_CASE("DrawShapeToolChamberExtension")
       | kdl::transform([&](const auto& brushes) {
           CHECK(brushes.size() == 20u);
           CHECK(
-            kdl::fold_left_first(
+            kdl::ranges::fold_left_first(
               brushes
                 | std::views::transform([](const auto& brush) { return brush.bounds(); }),
               [](const auto& lhs, const auto& rhs) { return vm::merge(lhs, rhs); })
@@ -713,7 +726,7 @@ TEST_CASE("DrawShapeToolChamberExtension")
       | kdl::transform([&](const auto& brushes) {
           REQUIRE(!brushes.empty());
           CHECK(
-            kdl::fold_left_first(
+            kdl::ranges::fold_left_first(
               brushes
                 | std::views::transform([](const auto& brush) { return brush.bounds(); }),
               [](const auto& lhs, const auto& rhs) { return vm::merge(lhs, rhs); })
@@ -735,6 +748,7 @@ TEST_CASE("DrawShapeToolParameters")
     REQUIRE(parameters.axis() == vm::axis::z);
     REQUIRE(parameters.hollow() == false);
     REQUIRE(parameters.thickness() == 16.0);
+    REQUIRE(parameters.createSpandrel() == false);
     REQUIRE(parameters.numRings() == 8);
     REQUIRE(parameters.accuracy() == 1);
     REQUIRE(
@@ -835,6 +849,27 @@ TEST_CASE("DrawShapeToolParameters")
 
     parameters.setThickness(8.0);
     REQUIRE(parameters.thickness() == 8.0);
+    CHECK(parametersDidChange.notifications.size() == 2u);
+  }
+
+  SECTION("CreateSpandrel modifications")
+  {
+    auto parametersDidChange = Observer<>{parameters.parametersDidChangeNotifier};
+
+    REQUIRE(parameters.createSpandrel() == false);
+
+    parameters.setCreateSpandrel(false);
+    CHECK(parametersDidChange.notifications.empty());
+
+    parameters.setCreateSpandrel(true);
+    REQUIRE(parameters.createSpandrel() == true);
+    CHECK(parametersDidChange.notifications.size() == 1u);
+
+    parameters.setCreateSpandrel(true);
+    CHECK(parametersDidChange.notifications.size() == 1u);
+
+    parameters.setCreateSpandrel(false);
+    REQUIRE(parameters.createSpandrel() == false);
     CHECK(parametersDidChange.notifications.size() == 2u);
   }
 

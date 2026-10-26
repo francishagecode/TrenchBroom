@@ -32,6 +32,7 @@
 #include "mdl/Selection.h"
 #include "mdl/Transaction.h"
 
+#include "kd/flat_set.h"
 #include "kd/overload.h"
 #include "kd/ranges/to.h"
 #include "kd/string_format.h"
@@ -58,11 +59,7 @@ void convertSelectionToPatches(
       })
     | kdl::ranges::to<std::vector>();
 
-  auto nodesToRemove = selection.allBrushFaces()
-                       | std::views::transform([](const auto& faceHandle) {
-                           return static_cast<Node*>(faceHandle.node());
-                         })
-                       | kdl::ranges::to<std::vector>();
+  auto nodesToRemove = kdl::vec_static_cast<Node*>(toNodes(selection.allBrushFaces()));
   kdl::vec_sort_and_remove_duplicates(nodesToRemove);
 
   auto transaction = Transaction{map, "Convert Selection to Patches"};
@@ -127,7 +124,7 @@ bool transformControlPoints(
   const vm::mat4x4d& transform)
 {
   const auto controlPointPositionSet =
-    std::set<vm::vec3d>{controlPointPositions.begin(), controlPointPositions.end()};
+    kdl::flat_set<vm::vec3d>{controlPointPositions.begin(), controlPointPositions.end()};
 
   auto newNodes = applyToNodeContents(
     map.selection().patches,

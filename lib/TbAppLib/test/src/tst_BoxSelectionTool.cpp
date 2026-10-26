@@ -159,7 +159,7 @@ TEST_CASE("BoxSelectionTool")
 
   SECTION("adding converts a face selection only when objects match")
   {
-    selectBrushFaces(map, {{outside, 0}});
+    selectBrushFaces(map, {{*outside, 0}});
     const auto initialSelection = map.selection();
 
     tool.select(

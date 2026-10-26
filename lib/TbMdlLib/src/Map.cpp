@@ -102,6 +102,7 @@
 #include "version/Version.h"
 
 #include "kd/contracts.h"
+#include "kd/filesystem_utils.h"
 #include "kd/path_utils.h"
 #include "kd/ranges/to.h"
 #include "kd/task_manager.h"
@@ -873,7 +874,7 @@ Result<void> Map::saveTo(const std::filesystem::path& path) const
   const auto generator =
     fmt::format("TrenchBroom {} (Build {})", VERSION_STR, BUILD_ID_STR);
 
-  fs::Disk::withOutputStream(path, [&](auto& stream) {
+  kdl::with_ostream(path, [&](auto& stream) {
     writeMapHeader(
       stream, gameInfo().gameConfig.name, m_worldNode->mapFormat(), generator);
 
@@ -892,9 +893,9 @@ Result<void> Map::exportAs(const ExportOptions& options) const
   return std::visit(
     kdl::overload(
       [&](const ObjExportOptions& objOptions) {
-        return fs::Disk::withOutputStream(objOptions.exportPath, [&](auto& objStream) {
+        return kdl::with_ostream(objOptions.exportPath, [&](auto& objStream) {
           const auto mtlPath = kdl::path_replace_extension(objOptions.exportPath, ".mtl");
-          return fs::Disk::withOutputStream(mtlPath, [&](auto& mtlStream) {
+          return kdl::with_ostream(mtlPath, [&](auto& mtlStream) {
             auto writer = NodeWriter{
               *m_worldNode,
               std::make_unique<ObjSerializer>(
@@ -905,7 +906,7 @@ Result<void> Map::exportAs(const ExportOptions& options) const
         });
       },
       [&](const MapExportOptions& mapOptions) {
-        return fs::Disk::withOutputStream(mapOptions.exportPath, [&](auto& stream) {
+        return kdl::with_ostream(mapOptions.exportPath, [&](auto& stream) {
           auto writer = NodeWriter{*m_worldNode, stream};
           writer.setExporting(true);
           writer.setStripTbProperties(mapOptions.stripTbProperties);
@@ -1012,31 +1013,6 @@ void Map::registerSmartTags()
   m_tagManager->registerSmartTags(gameInfo().gameConfig.smartTags);
 }
 
-const std::vector<SmartTag>& Map::smartTags() const
-{
-  return m_tagManager->smartTags();
-}
-
-bool Map::isRegisteredSmartTag(const std::string& name) const
-{
-  return m_tagManager->isRegisteredSmartTag(name);
-}
-
-const SmartTag& Map::smartTag(const std::string& name) const
-{
-  return m_tagManager->smartTag(name);
-}
-
-bool Map::isRegisteredSmartTag(const size_t index) const
-{
-  return m_tagManager->isRegisteredSmartTag(index);
-}
-
-const SmartTag& Map::smartTag(const size_t index) const
-{
-  return m_tagManager->smartTag(index);
-}
-
 void Map::initializeAllNodeTags()
 {
   m_worldNode->accept(makeInitializeNodeTagsVisitor(*m_tagManager));
@@ -1064,8 +1040,8 @@ void Map::updateFaceTags(const std::vector<BrushFaceHandle>& faceHandles)
 {
   for (const auto& faceHandle : faceHandles)
   {
-    BrushNode* node = faceHandle.node();
-    node->updateFaceTags(faceHandle.faceIndex(), *m_tagManager);
+    auto& node = faceHandle.node();
+    node.updateFaceTags(faceHandle.faceIndex(), *m_tagManager);
   }
 }
 
@@ -1286,10 +1262,10 @@ void Map::setMaterials(const std::vector<BrushFaceHandle>& faceHandles)
 {
   for (const auto& faceHandle : faceHandles)
   {
-    BrushNode* node = faceHandle.node();
+    auto& node = faceHandle.node();
     const BrushFace& face = faceHandle.face();
     auto* material = m_materialManager->material(face.materialName());
-    node->setFaceMaterial(faceHandle.faceIndex(), material);
+    node.setFaceMaterial(faceHandle.faceIndex(), material);
   }
   materialUsageCountsDidChangeNotifier();
 }
@@ -1631,7 +1607,7 @@ SelectionChange computeSelectionChangeForAddedNodes(const std::vector<Node*>& no
       {
         if (brush.face(i).selected())
         {
-          selectionChange.selectedBrushFaces.emplace_back(brushNode, i);
+          selectionChange.selectedBrushFaces.emplace_back(*brushNode, i);
         }
       }
     }
@@ -1657,7 +1633,7 @@ SelectionChange computeSelectionChangeForRemovedNodes(const std::vector<Node*>& 
       {
         if (brush.face(i).selected())
         {
-          selectionChange.deselectedBrushFaces.emplace_back(brushNode, i);
+          selectionChange.deselectedBrushFaces.emplace_back(*brushNode, i);
         }
       }
     }

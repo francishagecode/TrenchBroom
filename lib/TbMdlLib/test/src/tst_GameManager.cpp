@@ -26,6 +26,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_range_equals.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 namespace tb::mdl
 {
@@ -319,6 +320,34 @@ TEST_CASE("GameManager")
           })
         | kdl::transform_error([](const auto& e) { FAIL(e); });
     }
+
+    SECTION("orders games naturally")
+    {
+      auto env = fs::TestEnvironment{};
+
+      env.createDirectory(gamesPath);
+      env.createDirectory(userPath);
+
+      writeGameConfig(env, "Game10", "Game 10");
+      writeGameConfig(env, "Game9", "Game 9");
+      writeGameConfig(env, "Game2", "Game 2");
+
+      const auto gameConfigSearchDirs = std::vector{env.dir() / gamesPath};
+      const auto userGameDir = env.dir() / userPath;
+
+      initializeGameManager(gameConfigSearchDirs, userGameDir)
+        | kdl::transform([&](const auto& gameManager, const auto&) {
+            const auto& gameInfos = gameManager.gameInfos();
+
+            // A plain lexicographic sort would order these as Game 10, Game 2, Game 9.
+            CHECK_THAT(
+              gameInfos | std::views::transform([](const auto& gameInfo) {
+                return gameInfo.gameConfig.name;
+              }),
+              RangeEquals(std::vector{"Game 2", "Game 9", "Game 10"}));
+          })
+        | kdl::transform_error([](const auto& e) { FAIL(e); });
+    }
   }
 
   SECTION("updateCompilationConfig")
@@ -410,6 +439,52 @@ TEST_CASE("GameManager")
           REQUIRE(gameManager.updateGameEngineConfig("Quake", gameEngineConfig, logger)
                     .is_success());
           CHECK(gameEngineConfigDidChange.notifications == std::vector<GameInfo>{});
+        })
+      | kdl::transform_error([](const auto& e) { FAIL(e); });
+  }
+
+  SECTION("writes configs with legacy string escaping")
+  {
+    // configs are written as version 1 so that earlier versions of TrenchBroom can read
+    // them, and version 1 escapes every backslash
+    auto env = fs::TestEnvironment{};
+
+    env.createDirectory(gamesPath);
+    env.createDirectory(userPath);
+
+    writeGameConfig(env, "Quake", "Quake");
+
+    const auto gameConfigSearchDirs = std::vector{env.dir() / gamesPath};
+    const auto userGameDir = env.dir() / userPath;
+
+    const auto gameEngineConfig = GameEngineConfig{
+      .profiles = {
+        {
+          .id = generateUuid(),
+          .name = "name",
+          .path = R"(C:\Quake\quake.exe)",
+          .parameterSpec = R"(-basedir \\server\quake)",
+        },
+      }};
+
+    initializeGameManager(gameConfigSearchDirs, userGameDir)
+      | kdl::transform([&](auto gameManager, const auto&) {
+          REQUIRE(gameManager.updateGameEngineConfig("Quake", gameEngineConfig, logger)
+                    .is_success());
+        })
+      | kdl::transform_error([](const auto& e) { FAIL(e); });
+
+    CHECK_THAT(
+      env.loadFile(userPath / "Quake/GameEngineProfiles.cfg"),
+      ContainsSubstring("\"version\": 1")
+        && ContainsSubstring("\"path\": \"C:\\\\Quake\\\\quake.exe\"")
+        && ContainsSubstring("\"parameters\": \"-basedir \\\\\\\\server\\\\quake\""));
+
+    initializeGameManager(gameConfigSearchDirs, userGameDir)
+      | kdl::transform([&](const auto& gameManager, const auto&) {
+          const auto* gameInfo = gameManager.gameInfo("Quake");
+          REQUIRE(gameInfo != nullptr);
+          CHECK(gameInfo->gameEngineConfig == gameEngineConfig);
         })
       | kdl::transform_error([](const auto& e) { FAIL(e); });
   }

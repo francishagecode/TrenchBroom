@@ -61,7 +61,7 @@ std::vector<mdl::Node*> collectNodes(
   for (auto* indexedNode :
        map.worldNode().nodeTree().find_intersectors(selectionVolume.logicalBounds()))
   {
-    auto* node = mdl::findOutermostClosedGroupOrNode(indexedNode);
+    auto* node = mdl::findOutermostClosedGroupOrNode(*indexedNode);
     if (!seen.insert(node).second || !editorContext.selectable(*node))
     {
       continue;

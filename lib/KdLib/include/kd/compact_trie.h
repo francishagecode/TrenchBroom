@@ -23,9 +23,8 @@
 #include "kd/contracts.h"
 #include "kd/string_compare.h"
 #include "kd/string_format.h"
-#include "kd/vector_set.h"
 
-#include <stdexcept>
+#include <algorithm>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -46,6 +45,40 @@ inline constexpr std::string_view pattern_special_chars = "*?%\\";
 inline bool is_special_char(const char c)
 {
   return pattern_special_chars.find(c) != std::string_view::npos;
+}
+
+/**
+ * Finds the position in the sorted container that is equivalent to the given key
+ * according to the given comparator, or returns `container.end()` if no such position
+ * exists.
+ *
+ * Unlike a plain `std::set`-style container, this returns a mutable iterator if
+ * `container` is not const, so callers can descend into and mutate the found element in
+ * place, as long as doing so does not change how it compares to the other elements.
+ */
+template <typename Container, typename Compare, typename K>
+auto sorted_find(Container& container, const Compare& cmp, const K& key)
+{
+  const auto pos = std::ranges::lower_bound(container, key, cmp);
+  return pos != container.end() && !cmp(key, *pos) && !cmp(*pos, key) ? pos
+                                                                      : container.end();
+}
+
+/**
+ * Inserts the given value into the sorted container unless an equivalent value
+ * (according to the given comparator) is already present, and returns an iterator to
+ * the inserted or pre-existing value.
+ */
+template <typename Container, typename Compare>
+auto sorted_insert(
+  Container& container, const Compare& cmp, typename Container::value_type value)
+{
+  const auto pos = std::ranges::lower_bound(container, value, cmp);
+  if (pos != container.end() && !cmp(value, *pos) && !cmp(*pos, value))
+  {
+    return pos;
+  }
+  return container.insert(pos, std::move(value));
 }
 
 } // namespace detail
@@ -269,7 +302,7 @@ private:
     friend class match_state;
 
     using value_container = std::unordered_map<V, std::size_t>;
-    using node_set = kdl::vector_set<node, node_cmp>;
+    using node_set = std::vector<node>;
 
     /**
      * The partical key of this node.
@@ -344,7 +377,8 @@ private:
           // case 0, 1: m_key is a prefix of key, find or create a child that has a common
           // prefix with the remainder of key and insert there
           const auto remainder = key.substr(mismatch);
-          auto& child = *m_children.emplace(std::string{remainder}).first;
+          auto& child =
+            *detail::sorted_insert(m_children, node_cmp{}, node{std::string{remainder}});
           child.insert(remainder, value);
         }
         else
@@ -385,7 +419,7 @@ private:
         {
           // m_key is a true prefix of key, continue at the corresponding child node
           const auto remainder = key.substr(mismatch);
-          auto it = m_children.find(remainder);
+          auto it = detail::sorted_find(m_children, node_cmp{}, remainder);
           contract_assert(it != m_children.end());
 
           result = it->remove(remainder, value);
@@ -434,9 +468,6 @@ private:
      * @param parent this node's parent (used to update the match_state)
      * @param match_state the match state
      * @param out the output iterator to which the values of matched nodes are added
-     *
-     * @throws std::invalid_argument if the given pattern contains an invalid escape
-     * sequence
      */
     template <typename O>
     void find_matches(
@@ -483,38 +514,29 @@ private:
 
         // after this point, we can assume that the pattern is not consumed, but the key
         // might be
-        if (pattern[p_i] == detail::pattern_escape_char && p_i < pattern.length() - 1u)
+        if (
+          pattern[p_i] == detail::pattern_escape_char && p_i < pattern.length() - 1u
+          && detail::is_special_char(pattern[p_i + 1u]))
         {
           // handle escaped characters in the pattern
           const auto& n = pattern[p_i + 1u];
 
           if (k_i < m_key.length())
           {
-            // check the next character in the pattern against the next character in the
-            // key
-            if (detail::is_special_char(n))
+            if (m_key[k_i] == n)
             {
-              if (m_key[k_i] == n)
-              {
-                // the key matches the escaped character, continue
-                match_tasks.emplace_back(k_i + 1u, p_i + 2u);
-              }
-            }
-            else
-            {
-              throw std::invalid_argument{"invalid escape sequence in pattern"};
+              // the key matches the escaped character, continue
+              match_tasks.emplace_back(k_i + 1u, p_i + 2u);
             }
           }
           else
           {
-            // the key is consumed, so continue matching at the children
-            for (const auto c : detail::pattern_special_chars)
+            // the key is consumed, so continue matching at the child that starts with the
+            // escaped character
+            const auto it = detail::sorted_find(m_children, node_cmp{}, n);
+            if (it != m_children.end())
             {
-              const auto it = m_children.find(c);
-              if (it != m_children.end())
-              {
-                it->find_matches(pattern, p_i, this, match_state, out);
-              }
+              it->find_matches(pattern, p_i, this, match_state, out);
             }
           }
         }
@@ -586,8 +608,8 @@ private:
             {
               // the key is consumed, so continue matching at the children
               std::for_each(
-                m_children.lower_bound("0"),
-                m_children.upper_bound("9"),
+                std::ranges::lower_bound(m_children, "0", node_cmp{}),
+                std::ranges::upper_bound(m_children, "9", node_cmp{}),
                 [&](const auto& child) {
                   child.find_matches(pattern, p_i, this, match_state, out);
                 });
@@ -607,8 +629,8 @@ private:
             else
             {
               // the key is consumed, so continue matching at the children
-              for (auto it = m_children.lower_bound("0"),
-                        end = m_children.upper_bound("9");
+              for (auto it = std::ranges::lower_bound(m_children, "0", node_cmp{}),
+                        end = std::ranges::upper_bound(m_children, "9", node_cmp{});
                    it != end;
                    ++it)
               {
@@ -630,7 +652,8 @@ private:
           else
           {
             // the key is consumed, so continue matching at the children
-            for (auto [it, end] = m_children.equal_range(pattern.substr(p_i, 1u));
+            for (auto [it, end] = std::ranges::equal_range(
+                   m_children, pattern.substr(p_i, 1u), node_cmp{});
                  it != end;
                  ++it)
             {
@@ -708,7 +731,8 @@ private:
       auto new_children = node_set{};
       swap(new_children, m_children);
 
-      auto& new_child = *m_children.insert(node(std::move(remainder))).first;
+      auto& new_child =
+        *detail::sorted_insert(m_children, node_cmp{}, node{std::move(remainder)});
       swap(new_child.m_children, new_children);
       swap(new_child.m_values, m_values);
 
@@ -793,6 +817,11 @@ private:
       return compare(lhs.m_key, rhs);
     }
 
+    bool operator()(const std::string_view lhs, const std::string_view rhs) const
+    {
+      return compare(lhs, rhs);
+    }
+
     bool compare(const std::string_view lhs, const std::string_view& rhs) const
     {
       contract_pre(!lhs.empty() && !rhs.empty());
@@ -807,6 +836,11 @@ private:
     bool operator()(const node& lhs, const char rhs) const
     {
       return compare(lhs.m_key, std::string_view{&rhs, 1});
+    }
+
+    bool operator()(const char lhs, const char rhs) const
+    {
+      return compare(std::string_view{&lhs, 1}, std::string_view{&rhs, 1});
     }
   };
 

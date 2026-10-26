@@ -37,6 +37,7 @@
 
 #include "kd/contracts.h"
 #include "kd/overload.h"
+#include "kd/ranges/contains.h"
 #include "kd/string_utils.h"
 
 namespace tb::mdl
@@ -61,7 +62,7 @@ std::optional<std::string> findUnprotectedPropertyValue(
 {
   for (const auto* entityNode : linkedEntities)
   {
-    if (!kdl::vec_contains(entityNode->entity().protectedProperties(), key))
+    if (!kdl::ranges::contains(entityNode->entity().protectedProperties(), key))
     {
       if (const auto* value = entityNode->entity().property(key))
       {
@@ -140,13 +141,13 @@ EntityNode* createBrushEntity(Map& map, const EntityDefinition& definition)
 
   // if all nodes belong to the same entity, and that entity is not worldspawn, copy
   // its properties
-  const auto* containingEntity = findContainingEntity(nodes.front());
+  const auto* containingEntity = findContainingEntity(*nodes.front());
   auto entity =
     (containingEntity && containingEntity != &map.worldNode()
      && std::all_of(
        std::next(nodes.begin()),
        nodes.end(),
-       [&](const auto* node) { return findContainingEntity(node) == containingEntity; }))
+       [&](const auto* node) { return findContainingEntity(*node) == containingEntity; }))
       ? containingEntity->entity()
       : Entity{};
 
@@ -335,11 +336,11 @@ bool setProtectedEntityProperty(Map& map, const std::string& key, const bool val
   {
     auto entity = entityNode->entity();
     auto protectedProperties = entity.protectedProperties();
-    if (value && !kdl::vec_contains(protectedProperties, key))
+    if (value && !kdl::ranges::contains(protectedProperties, key))
     {
       protectedProperties.push_back(key);
     }
-    else if (!value && kdl::vec_contains(protectedProperties, key))
+    else if (!value && kdl::ranges::contains(protectedProperties, key))
     {
       if (
         const auto newValue =

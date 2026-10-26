@@ -24,6 +24,9 @@
 
 #include "vm/mat.h"
 
+#include <optional>
+#include <string>
+
 namespace tb::ui
 {
 class MapDocument;
@@ -40,6 +43,8 @@ public:
 
   DrawShapeToolExtensionManager& extensionManager();
   void applyExtensionParameters();
+
+  std::optional<std::string> groupNameForCreatedBrushes() const;
 
 private:
   DrawShapeToolExtensionManager m_extensionManager;

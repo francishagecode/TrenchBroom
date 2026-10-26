@@ -9,6 +9,7 @@ target_sources(TbAppLibTest
     ${CMAKE_CURRENT_SOURCE_DIR}/src/tst_ClipTool.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/tst_ClipToolController.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/tst_ControlPointTool.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/tst_ControlPointToolController.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/tst_DrawShapeTool.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/tst_DrawShapeToolExtensionRegistry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/tst_DrawShapeToolExtensions.cpp
@@ -32,6 +33,7 @@ target_sources(TbAppLibTest
     ${CMAKE_CURRENT_SOURCE_DIR}/src/tst_UvShearTool.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/tst_UvViewHelper.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/tst_VertexTool.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/tst_VertexToolController.cpp
 )
 
 add_compile_definitions(CATCH_CONFIG_ENABLE_ALL_STRINGMAKERS=1)
@@ -44,6 +46,7 @@ target_link_libraries(TbAppLibTest
     TbAppLib
     TbAppTestUtilsLib
     TbBaseTestUtilsLib
+    TbGlTestUtilsLib
     TbMdlTestUtilsLib
 )
 

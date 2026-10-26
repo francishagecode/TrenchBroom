@@ -26,7 +26,9 @@
 #include "mdl/NodeQueries.h"
 
 #include "kd/contracts.h"
+#include "kd/flat_set.h"
 #include "kd/ranges/cartesian_product_view.h"
+#include "kd/ranges/contains.h"
 #include "kd/ranges/to.h"
 #include "kd/stable_remove_duplicates.h"
 #include "kd/vector_utils.h"
@@ -49,9 +51,9 @@ HitType::Type nodeHitType()
   return EntityNode::EntityHitType | BrushNode::BrushHitType | PatchNode::PatchHitType;
 }
 
-LayerNode* findContainingLayer(Node* node)
+LayerNode* findContainingLayer(Node& node)
 {
-  return node->accept(kdl::overload(
+  return node.accept(kdl::overload(
     [](WorldNode&) -> LayerNode* { return nullptr; },
     [](LayerNode& layerNode) -> LayerNode* { return &layerNode; },
     [](auto&& thisLambda, GroupNode& groupNode) -> LayerNode* {
@@ -73,7 +75,7 @@ std::vector<LayerNode*> collectContainingLayersUserSorted(const std::vector<Node
   std::vector<LayerNode*> layers;
   for (auto* node : nodes)
   {
-    if (auto* layer = findContainingLayer(node))
+    if (auto* layer = findContainingLayer(*node))
     {
       layers.push_back(layer);
     }
@@ -81,10 +83,10 @@ std::vector<LayerNode*> collectContainingLayersUserSorted(const std::vector<Node
   return kdl::vec_sort_and_remove_duplicates(std::move(layers));
 }
 
-GroupNode* findContainingGroup(Node* node)
+GroupNode* findContainingGroup(Node& node)
 {
   return node
-    ->visitParent(kdl::overload(
+    .visitParent(kdl::overload(
       [](WorldNode&) -> GroupNode* { return nullptr; },
       [](LayerNode&) -> GroupNode* { return nullptr; },
       [](GroupNode& groupNode) -> GroupNode* { return &groupNode; },
@@ -100,14 +102,14 @@ GroupNode* findContainingGroup(Node* node)
     .value_or(nullptr);
 }
 
-const GroupNode* findContainingGroup(const Node* node)
+const GroupNode* findContainingGroup(const Node& node)
 {
-  return findContainingGroup(const_cast<Node*>(node));
+  return findContainingGroup(const_cast<Node&>(node));
 }
 
-EntityNodeBase* findContainingEntity(Node* node)
+EntityNodeBase* findContainingEntity(Node& node)
 {
-  return node->accept(kdl::overload(
+  return node.accept(kdl::overload(
     [](WorldNode&) -> EntityNodeBase* { return nullptr; },
     [](LayerNode&) -> EntityNodeBase* { return nullptr; },
     [](GroupNode&) -> EntityNodeBase* { return nullptr; },
@@ -116,15 +118,15 @@ EntityNodeBase* findContainingEntity(Node* node)
     [](PatchNode& patchNode) { return patchNode.entity(); }));
 }
 
-const EntityNodeBase* findContainingEntity(const Node* node)
+const EntityNodeBase* findContainingEntity(const Node& node)
 {
-  return findContainingEntity(const_cast<Node*>(node));
+  return findContainingEntity(const_cast<Node&>(node));
 }
 
-GroupNode* findOutermostClosedGroup(Node* node)
+GroupNode* findOutermostClosedGroup(Node& node)
 {
   return node
-    ->visitParent(kdl::overload(
+    .visitParent(kdl::overload(
       [](WorldNode&) -> GroupNode* { return nullptr; },
       [](LayerNode&) -> GroupNode* { return nullptr; },
       [](auto&& thisLambda, GroupNode& groupNode) -> GroupNode* {
@@ -148,33 +150,36 @@ GroupNode* findOutermostClosedGroup(Node* node)
     .value_or(nullptr);
 }
 
-const GroupNode* findOutermostClosedGroup(const Node* node)
+const GroupNode* findOutermostClosedGroup(const Node& node)
 {
-  return findOutermostClosedGroup(const_cast<Node*>(node));
+  return findOutermostClosedGroup(const_cast<Node&>(node));
 }
 
-Node* findOutermostClosedGroupOrNode(Node* node)
+Node* findOutermostClosedGroupOrNode(Node& node)
 {
   if (auto* group = findOutermostClosedGroup(node))
   {
     return group;
   }
 
-  return node;
+  return &node;
 }
 
 std::vector<Node*> hitsToNodesWithGroupPicking(const std::vector<Hit>& hits)
 {
+  contract_pre(std::ranges::all_of(
+    hits, [](const auto& hit) { return hit.hasType(nodeHitType()); }));
+
   return kdl::col_stable_remove_duplicates(
     hits | std::views::transform([](const auto& hit) {
-      return findOutermostClosedGroupOrNode(hitToNode(hit));
+      return findOutermostClosedGroupOrNode(*hitToNode(hit));
     })
     | kdl::ranges::to<std::vector>());
 }
 
-const Node* findOutermostClosedGroupOrNode(const Node* node)
+const Node* findOutermostClosedGroupOrNode(const Node& node)
 {
-  return findOutermostClosedGroupOrNode(const_cast<Node*>(node));
+  return findOutermostClosedGroupOrNode(const_cast<Node&>(node));
 }
 
 std::vector<GroupNode*> collectGroups(const std::vector<Node*>& nodes)
@@ -236,9 +241,10 @@ std::vector<GroupNode*> collectContainingGroups(const std::vector<Node*>& nodes)
   return kdl::vec_sort_and_remove_duplicates(std::move(result));
 }
 
-std::map<Node*, std::vector<Node*>> parentChildrenMap(const std::vector<Node*>& nodes)
+kdl::flat_map<Node*, std::vector<Node*>> parentChildrenMap(
+  const std::vector<Node*>& nodes)
 {
-  auto result = std::map<Node*, std::vector<Node*>>{};
+  auto result = kdl::flat_map<Node*, std::vector<Node*>>{};
 
   for (auto* node : nodes)
   {
@@ -271,7 +277,7 @@ static std::vector<Node*> collectMatchingNodes(
   const auto collectIfMatching = [&](auto& node) {
     for (const auto* brush : brushes)
     {
-      if (predicate(node, brush))
+      if (predicate(node, *brush))
       {
         result.push_back(&node);
         return;
@@ -308,7 +314,7 @@ static std::vector<Node*> collectMatchingNodes(
       },
       [&](BrushNode& brushNode) {
         // if `brush` is one of the search query nodes, don't count it as touching
-        if (!kdl::vec_contains(brushes, &brushNode))
+        if (!kdl::ranges::contains(brushes, &brushNode))
         {
           collectIfMatching(brushNode);
         }
@@ -327,7 +333,7 @@ std::vector<Node*> collectTouchingNodes(
 {
   return collectMatchingNodes(
     nodes, brushNodes, [](const auto& node, const auto& brushNode) {
-      return brushNode->intersects(node);
+      return brushNode.intersects(node);
     });
 }
 
@@ -336,7 +342,7 @@ std::vector<Node*> collectContainedNodes(
 {
   return collectMatchingNodes(
     nodes, brushNodes, [](const auto& node, const auto& brushNode) {
-      return brushNode->contains(node);
+      return brushNode.contains(node);
     });
 }
 
@@ -396,18 +402,16 @@ std::vector<Node*> collectSelectableNodes(
 
 std::vector<BrushFaceHandle> collectSelectedBrushFaces(const std::vector<Node*>& nodes)
 {
-  return collectBrushFaces(nodes, [](const BrushNode&, const BrushFace& brushFace) {
-    return brushFace.selected();
-  });
+  return collectBrushFaces(
+    nodes, [](const auto& brushFaceHandle) { return brushFaceHandle.face().selected(); });
 }
 
 std::vector<BrushFaceHandle> collectSelectableBrushFaces(
   const std::vector<Node*>& nodes, const EditorContext& editorContext)
 {
-  return collectBrushFaces(
-    nodes, [&](const BrushNode& brushNode, const BrushFace& brushFace) {
-      return editorContext.selectable(brushNode, brushFace);
-    });
+  return collectBrushFaces(nodes, [&](const auto& brushFaceHandle) {
+    return editorContext.selectable(brushFaceHandle.node(), brushFaceHandle.face());
+  });
 }
 
 std::vector<BrushFaceHandle> collectConnectedCoplanarFaces(
@@ -427,17 +431,16 @@ std::vector<BrushFaceHandle> collectConnectedCoplanarFaces(
 
   const auto makeCandidate = [&](const BrushFaceHandle& handle) {
     const auto vertices = handle.face().vertexPositions();
+    contract_pre(!vertices.empty());
+
     const auto edges =
       handle.face().edges()
       | std::views::transform([](const auto* edge) { return edge->segment(); });
 
-    auto builder = vm::bbox3d::builder{};
-    builder.add(std::begin(vertices), std::end(vertices));
-
     return Candidate{
       handle,
       edges | kdl::ranges::to<std::vector>(),
-      builder.bounds().expand(epsilon),
+      vm::bbox3d::build(vertices)->expand(epsilon),
     };
   };
 
@@ -455,11 +458,11 @@ std::vector<BrushFaceHandle> collectConnectedCoplanarFaces(
   // hidden or locked brushes from bridging the region.
   auto nodeCache = std::unordered_map<Node*, std::vector<BrushFaceHandle>>{};
 
-  const auto coplanarFacesOf = [&](Node* node) -> const std::vector<BrushFaceHandle>& {
-    auto [it, inserted] = nodeCache.emplace(node, std::vector<BrushFaceHandle>{});
+  const auto coplanarFacesOf = [&](Node& node) -> const std::vector<BrushFaceHandle>& {
+    auto [it, inserted] = nodeCache.emplace(&node, std::vector<BrushFaceHandle>{});
     if (inserted)
     {
-      it->second = collectSelectableBrushFaces(std::vector<Node*>{node}, editorContext)
+      it->second = collectSelectableBrushFaces(std::vector<Node*>{&node}, editorContext)
                    | std::views::filter([&](const auto& handle) {
                        return handle.face().coplanarWith(startPlane);
                      })
@@ -472,7 +475,7 @@ std::vector<BrushFaceHandle> collectConnectedCoplanarFaces(
     auto result = std::vector<BrushFaceHandle>{};
     for (auto* node : nodeTree.find_intersectors(bounds))
     {
-      kdl::vec_append(result, coplanarFacesOf(node));
+      kdl::vec_append(result, coplanarFacesOf(*node));
     }
     return result;
   };
@@ -480,7 +483,7 @@ std::vector<BrushFaceHandle> collectConnectedCoplanarFaces(
   // Flood out from the start face, re-querying the tree around each face we reach so a
   // long row of brushes is followed without ever visiting the rest of the map.
   auto region = std::vector<BrushFaceHandle>{};
-  auto visited = kdl::vector_set<BrushFaceHandle>{startFace};
+  auto visited = kdl::flat_set<BrushFaceHandle>{startFace};
   auto pending = std::vector<Candidate>{};
   pending.push_back(makeCandidate(startFace));
 
@@ -511,33 +514,35 @@ std::vector<BrushFaceHandle> collectConnectedCoplanarFaces(
 vm::bbox3d computeLogicalBounds(
   const std::vector<Node*>& nodes, const vm::bbox3d& defaultBounds)
 {
-  vm::bbox3d::builder builder;
+  auto bounds = std::vector<vm::bbox3d>{};
   Node::visitAll(
     nodes,
     kdl::overload(
       [](const WorldNode&) {},
       [](const LayerNode&) {},
-      [&](const GroupNode& groupNode) { builder.add(groupNode.logicalBounds()); },
-      [&](const EntityNode& entityNode) { builder.add(entityNode.logicalBounds()); },
-      [&](const BrushNode& brushNode) { builder.add(brushNode.logicalBounds()); },
-      [&](const PatchNode& patchNode) { builder.add(patchNode.logicalBounds()); }));
-  return builder.initialized() ? builder.bounds() : defaultBounds;
+      [&](const GroupNode& groupNode) { bounds.push_back(groupNode.logicalBounds()); },
+      [&](const EntityNode& entityNode) { bounds.push_back(entityNode.logicalBounds()); },
+      [&](const BrushNode& brushNode) { bounds.push_back(brushNode.logicalBounds()); },
+      [&](const PatchNode& patchNode) { bounds.push_back(patchNode.logicalBounds()); }));
+  return vm::bbox3d::build(bounds).value_or(defaultBounds);
 }
 
 vm::bbox3d computePhysicalBounds(
   const std::vector<Node*>& nodes, const vm::bbox3d& defaultBounds)
 {
-  vm::bbox3d::builder builder;
+  auto bounds = std::vector<vm::bbox3d>{};
   Node::visitAll(
     nodes,
     kdl::overload(
       [](const WorldNode&) {},
       [](const LayerNode&) {},
-      [&](const GroupNode& groupNode) { builder.add(groupNode.physicalBounds()); },
-      [&](const EntityNode& entityNode) { builder.add(entityNode.physicalBounds()); },
-      [&](const BrushNode& brushNode) { builder.add(brushNode.physicalBounds()); },
-      [&](const PatchNode& patchNode) { builder.add(patchNode.physicalBounds()); }));
-  return builder.initialized() ? builder.bounds() : defaultBounds;
+      [&](const GroupNode& groupNode) { bounds.push_back(groupNode.physicalBounds()); },
+      [&](const EntityNode& entityNode) {
+        bounds.push_back(entityNode.physicalBounds());
+      },
+      [&](const BrushNode& brushNode) { bounds.push_back(brushNode.physicalBounds()); },
+      [&](const PatchNode& patchNode) { bounds.push_back(patchNode.physicalBounds()); }));
+  return vm::bbox3d::build(bounds).value_or(defaultBounds);
 }
 
 std::vector<BrushNode*> filterBrushNodes(const std::vector<Node*>& nodes)

@@ -91,7 +91,7 @@ vm::vec2d UvViewHelper::stripeSize() const
 {
   contract_pre(valid());
 
-  if (const auto* texture = getTexture(face()->material()))
+  if (const auto* texture = gl::getTexture(face()->material()))
   {
     return vm::vec2d{texture->sizef()} / vm::vec2d{m_subDivisions};
   }
@@ -144,7 +144,7 @@ void UvViewHelper::pickUvGrid(
 {
   contract_pre(valid());
 
-  if (face()->material())
+  if (gl::getTexture(material()))
   {
     const auto& boundary = face()->boundary();
     if (const auto distance = vm::intersect_ray_plane(ray, boundary))
@@ -249,8 +249,9 @@ void UvViewHelper::computeLineVertices(
   const vm::mat4x4d& toWorld) const
 {
   const auto viewportVertices = toTex * m_camera.viewportVertices();
-  const auto viewportBounds =
-    vm::bbox3d::merge_all(std::begin(viewportVertices), std::end(viewportVertices));
+  contract_pre(!viewportVertices.empty());
+
+  const auto viewportBounds = *vm::bbox3d::build(viewportVertices);
   const auto& min = viewportBounds.min;
   const auto& max = viewportBounds.max;
 

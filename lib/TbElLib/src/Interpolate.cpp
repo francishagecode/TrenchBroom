@@ -20,13 +20,13 @@
 #include "el/Interpolate.h"
 
 #include "el/EvaluationContext.h"
-#include "el/Expression.h"
 #include "el/ParseExpression.h"
 #include "el/Value.h"
 
 #include "kd/ranges/to.h"
 #include "kd/result_fold.h"
 #include "kd/string_utils.h"
+#include "kd/unpack.h"
 
 #include <fmt/format.h>
 
@@ -63,11 +63,11 @@ auto parseExpressions(
   const std::string_view str,
   const std::vector<std::tuple<std::size_t, std::size_t>>& expressionPositions)
 {
-  return expressionPositions | std::views::transform([&](const auto& expressionPosition) {
-           const auto [start, length] = expressionPosition;
-           const auto expressionStr = str.substr(start + 2, length - 3);
-           return parseExpression(ParseMode::Strict, expressionStr);
-         })
+  return expressionPositions
+         | std::views::transform(kdl::unpack([&](const auto& start, const auto& length) {
+             const auto expressionStr = str.substr(start + 2, length - 3);
+             return parseExpression(ParseMode::Strict, expressionStr);
+           }))
          | kdl::fold;
 }
 
@@ -81,7 +81,6 @@ auto evaluateExpressions(
 }
 
 auto substituteValues(
-  EvaluationContext& context,
   const std::string_view str,
   const std::vector<std::tuple<std::size_t, std::size_t>>& expressionsPositions,
   const std::vector<el::Value>& values)
@@ -92,7 +91,7 @@ auto substituteValues(
   {
     const auto [start, length] = expressionsPositions[i];
     result << str.substr(previousEnd, start - previousEnd);
-    result << values[i].convertTo(context, el::ValueType::String).stringValue(context);
+    result << values[i].convertTo(el::ValueType::String).stringValue();
     previousEnd = start + length;
   }
   result << str.substr(previousEnd);
@@ -112,8 +111,7 @@ Result<std::string> interpolate(
                           return evaluateExpressions(context, expressions);
                         })
                       | kdl::transform([&](const auto& values) {
-                          return substituteValues(
-                            context, str, expressionPositions, values);
+                          return substituteValues(str, expressionPositions, values);
                         });
              });
     },

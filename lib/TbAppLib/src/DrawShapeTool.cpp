@@ -20,12 +20,14 @@
 #include "ui/DrawShapeTool.h"
 
 #include "base/Logger.h"
+#include "base/PreferenceManager.h"
 #include "mdl/Brush.h" // IWYU pragma: keep
 #include "mdl/BrushNode.h"
 #include "mdl/Map.h"
 #include "mdl/Map_Nodes.h"
 #include "mdl/Map_Selection.h"
 #include "mdl/Transaction.h"
+#include "prefs/Preferences.h"
 #include "ui/DrawShapeToolExtensionManager.h"
 #include "ui/MapDocument.h"
 
@@ -83,6 +85,13 @@ bool DrawShapeTool::cancel()
 DrawShapeToolExtensionManager& DrawShapeTool::extensionManager()
 {
   return m_extensionManager;
+}
+
+std::optional<std::string> DrawShapeTool::groupNameForCreatedBrushes() const
+{
+  return pref(Preferences::GroupBrushesCreatedByShapeTool)
+           ? std::optional{m_extensionManager.currentExtension().name()}
+           : std::nullopt;
 }
 
 void DrawShapeTool::applyExtensionParameters()

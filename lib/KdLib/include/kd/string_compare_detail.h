@@ -23,7 +23,10 @@
 #include "kd/collection_utils.h"
 
 #include <algorithm>
+#include <cctype>
+#include <iterator>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace kdl
@@ -145,6 +148,117 @@ int str_compare(
 }
 
 /**
+ * Performs a natural order comparison of the given strings s1 and s2, using the given
+ * comparator to compare characters that are not part of a digit run. Returns -1 if the
+ * first string is less than the second string, or +1 in the opposite case, or 0 if both
+ * strings are equal.
+ *
+ * Runs of digits compare by their numeric value, ignoring any leading zeros, so "tex9"
+ * sorts before "tex10", and "tex1" sorts before "tex02". If two runs have the same
+ * numeric value only because of different zero padding, the padding breaks the tie by
+ * comparing the digits verbatim, so e.g. "tex01" sorts before "tex1". This means that two
+ * different digit runs never compare equal.
+ *
+ * All other characters, including whitespace, are compared using the given comparator.
+ *
+ * @tparam CharCompare the type of the comparator to use for comparing characters
+ * @param s1 the first string
+ * @param s2 the second string
+ * @param char_compare the comparator
+ * @return an int indicating the result of the comparison
+ */
+template <typename CharCompare>
+int str_compare_natural(
+  const std::string_view s1, const std::string_view s2, const CharCompare& char_compare)
+{
+  const auto skip = [](auto cur, const auto end, const auto& pred) {
+    while (cur != end && pred(*cur))
+    {
+      ++cur;
+    }
+    return cur;
+  };
+
+  const auto skipDigits = [&skip](auto cur, const auto end) {
+    return skip(
+      cur, end, [](const auto x) { return std::isdigit(static_cast<unsigned char>(x)); });
+  };
+
+  const auto skipZeros = [&skip](auto cur, const auto end) {
+    return skip(cur, end, [](const auto x) { return x == '0'; });
+  };
+
+  auto i1 = s1.begin();
+  auto i2 = s2.begin();
+
+  while (i1 != s1.end() && i2 != s2.end())
+  {
+    if (
+      std::isdigit(static_cast<unsigned char>(*i1))
+      && std::isdigit(static_cast<unsigned char>(*i2)))
+    {
+      // Remember where the digits started.
+      const auto d1 = std::exchange(i1, skipDigits(i1, s1.end()));
+      const auto d2 = std::exchange(i2, skipDigits(i2, s2.end()));
+
+      // Ignore leading zeros to determine the numeric value of each run, but leave at
+      // least one digit so that a run of all zeros still has a value.
+      const auto z1 = skipZeros(d1, std::prev(i1));
+      const auto z2 = skipZeros(d2, std::prev(i2));
+
+      const auto value_len1 = std::distance(z1, i1);
+      const auto value_len2 = std::distance(z2, i2);
+
+      if (value_len1 != value_len2)
+      {
+        return value_len1 < value_len2 ? -1 : 1;
+      }
+
+      for (auto k1 = z1, k2 = z2; k1 != i1; ++k1, ++k2)
+      {
+        if (*k1 != *k2)
+        {
+          return *k1 < *k2 ? -1 : 1;
+        }
+      }
+
+      // The numeric values are equal; break the tie using the exact digits, including
+      // any leading zeros, so that different digit runs never compare equal.
+      auto k1 = d1;
+      auto k2 = d2;
+      while (k1 != i1 && k2 != i2)
+      {
+        if (*k1 != *k2)
+        {
+          return *k1 < *k2 ? -1 : 1;
+        }
+        ++k1;
+        ++k2;
+      }
+      if (k1 != i1 || k2 != i2)
+      {
+        return k1 != i1 ? 1 : -1;
+      }
+    }
+    else
+    {
+      if (char_compare(*i1, *i2))
+      {
+        return -1;
+      }
+      if (char_compare(*i2, *i1))
+      {
+        return 1;
+      }
+      ++i1;
+      ++i2;
+    }
+  }
+
+  return i1 == s1.end() && i2 == s2.end() ? 0 : i1 == s1.end() ? -1 : +1;
+}
+
+/**
  * Checks whether the given strings are equal. Characters are compared for equality using
  * the given binary predicate.
  *
@@ -176,6 +290,9 @@ bool str_is_equal(
  * - \% matches a literal '%' character
  * - \\ matches a literal '\' character
  *
+ * A '\' that isn't followed by one of the characters '?', '*', '%' or '\' also matches a
+ * literal '\' character.
+ *
  * Consider the following examples:
  * - ?o? matches 'god' and 'dog', but not 'dug'
  * - he*o matches 'hello' and 'hero', but not 'hera' nor 'hiro'
@@ -194,8 +311,42 @@ template <typename CharEqual>
 bool str_matches_glob(
   const std::string_view str, const std::string_view pattern, const CharEqual& char_equal)
 {
+  // fast path for patterns with a leading and / or a trailing *, and no other placeholder
+  const auto leading_star = pattern.starts_with('*');
+  const auto trailing_star =
+    pattern.size() > (leading_star ? 1u : 0u) && pattern.ends_with('*');
+  const auto literal = pattern.substr(
+    leading_star ? 1u : 0u,
+    pattern.size() - (leading_star ? 1u : 0u) - (trailing_star ? 1u : 0u));
+
+  if (literal.find_first_of("*?%\\") == std::string_view::npos)
+  {
+    if (leading_star && trailing_star)
+    {
+      return literal.empty() || str_contains(str, literal, char_equal);
+    }
+    if (leading_star)
+    {
+      return str_is_suffix(str, literal, char_equal);
+    }
+    if (trailing_star)
+    {
+      return str_is_prefix(str, literal, char_equal);
+    }
+    return str_is_equal(str, literal, char_equal);
+  }
+
+  const auto is_escapable = [](const char c) {
+    return c == '*' || c == '?' || c == '%' || c == '\\';
+  };
+
   using match_task = std::pair<std::size_t, std::size_t>;
-  std::vector<match_task> match_tasks({{0u, 0u}});
+
+  const auto num_match_tasks =
+    pattern.find('*') != std::string_view::npos ? str.length() + 1u : 1u;
+  auto match_tasks = std::vector<match_task>{};
+  match_tasks.reserve(num_match_tasks);
+  match_tasks.emplace_back(0u, 0u);
 
   while (!match_tasks.empty())
   {
@@ -214,27 +365,15 @@ bool str_matches_glob(
       continue;
     }
 
-    if (pattern[p_i] == '\\' && p_i < pattern.length() - 1u)
+    if (
+      pattern[p_i] == '\\' && p_i < pattern.length() - 1u
+      && is_escapable(pattern[p_i + 1u]))
     {
       // handle escaped characters in the pattern
-      if (s_i < str.length())
+      if (s_i < str.length() && str[s_i] == pattern[p_i + 1u])
       {
-        // check the next character in the pattern against the next character in the
-        // string
-        const auto& n = pattern[p_i + 1u];
-        if (n == '*' || n == '?' || n == '%' || n == '\\')
-        {
-          if (str[s_i] == n)
-          {
-            // the string matches the escaped character, continue to match
-            match_tasks.emplace_back(s_i + 1u, p_i + 2u);
-          }
-        }
-        else
-        {
-          // invalid escape sequence in pattern
-          return false;
-        }
+        // the string matches the escaped character, continue to match
+        match_tasks.emplace_back(s_i + 1u, p_i + 2u);
       }
     }
     else if (pattern[p_i] == '*')

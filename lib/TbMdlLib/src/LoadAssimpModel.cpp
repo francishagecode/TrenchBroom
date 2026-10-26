@@ -36,8 +36,10 @@
 
 #include "kd/path_utils.h"
 #include "kd/ranges/as_rvalue_view.h"
+#include "kd/ranges/contains.h"
 #include "kd/ranges/to.h"
 #include "kd/result_fold.h"
+#include "kd/unpack.h"
 
 #include <assimp/IOStream.hpp>
 #include <assimp/IOSystem.hpp>
@@ -48,6 +50,7 @@
 #include <fmt/format.h>
 #include <fmt/std.h>
 
+#include <algorithm>
 #include <ranges>
 
 namespace tb::mdl
@@ -299,14 +302,28 @@ gl::Texture loadUncompressedEmbeddedTexture(
   std::ranges::copy(sourceRange, reinterpret_cast<aiTexel*>(buffer.data()));
 
   const auto averageColor = getAverageColor(buffer, GL_BGRA);
-  return {
-    width,
-    height,
-    averageColor,
-    GL_BGRA,
-    gl::TextureMask::On,
-    gl::NoEmbeddedDefaults{},
-    std::move(buffer)};
+
+  // aiTexel is a real per-texel ARGB8888 value, not a palette index, so a texel that
+  // doesn't match transparentTexel (or when no transparentTexel is given at all) can
+  // still carry its own meaningful alpha -- classify the actual resulting buffer rather
+  // than just the mask match, so genuine graduated alpha in the source asset isn't
+  // discarded.
+  const auto alphas =
+    sourceRange | std::views::transform([](const auto& texel) { return texel.a; });
+
+  const auto hasTransparency =
+    std::ranges::any_of(alphas, [](const auto& alpha) { return alpha != 255; });
+  const auto hasIntermediateAlpha = std::ranges::any_of(
+    alphas, [](const auto& alpha) { return alpha != 0 && alpha != 255; });
+
+  const auto alphaDomain = !hasTransparency       ? img::ImageAlphaDomain::Opaque
+                           : hasIntermediateAlpha ? img::ImageAlphaDomain::Graduated
+                                                  : img::ImageAlphaDomain::Binary;
+
+  auto texture = gl::Texture{
+    width, height, averageColor, GL_BGRA, gl::NoEmbeddedDefaults{}, std::move(buffer)};
+  texture.setAlphaDomain(alphaDomain);
+  return texture;
 }
 
 gl::Texture loadCompressedEmbeddedTexture(
@@ -328,6 +345,16 @@ std::optional<aiTexel> getTransparentTexel(const aiMaterial& material)
       0};
   }
   return std::nullopt;
+}
+
+bool isAdditiveMaterial(const aiMaterial& material)
+{
+  if (int blendFunc = 0;
+      material.Get(AI_MATKEY_BLEND_FUNC, blendFunc) == aiReturn_SUCCESS)
+  {
+    return blendFunc == aiBlendMode_Additive;
+  }
+  return false;
 }
 
 std::vector<gl::Texture> loadTexturesForMaterial(
@@ -840,18 +867,15 @@ Result<void> loadSceneFrame(
     scene.mRootNode->mTransformation,
     getAxisTransform(scene));
 
-  auto bounds = vm::bbox3f::builder{};
+  auto points = std::vector<vm::vec3f>{};
 
   return meshes | std::views::transform([&](const auto& mesh) {
            return std::tuple{mesh, getMeshIndex(scene, *mesh.m_mesh)};
          })
-         | std::views::filter([](const auto& meshAndIndex) {
-             return std::get<1>(meshAndIndex) != std::nullopt;
-           })
-         | std::views::transform([&](const auto& meshAndIndex) {
-             const auto& mesh = std::get<0>(meshAndIndex);
-             const auto& meshIndex = *std::get<1>(meshAndIndex);
-
+         | std::views::filter(kdl::unpack(
+           [](const auto&, const auto& meshIndex) { return meshIndex != std::nullopt; }))
+         | std::views::transform(
+           kdl::unpack([&](const auto& mesh, const auto& meshIndex) {
              return computeMeshVertices(
                       *mesh.m_mesh,
                       mesh.m_transform,
@@ -860,21 +884,21 @@ Result<void> loadSceneFrame(
                     | kdl::transform([&](const auto& vertices) {
                         for (const auto& v : vertices)
                         {
-                          bounds.add(v.attr);
+                          points.push_back(v.attr);
                         }
 
-                        return computeMeshData(mesh, meshIndex, vertices);
+                        return computeMeshData(mesh, *meshIndex, vertices);
                       });
-           })
+           }))
          | kdl::fold | kdl::and_then([&](const auto& meshData) -> Result<void> {
-             if (!bounds.initialized())
+             const auto frameBounds = vm::bbox3f::build(points);
+             if (!frameBounds)
              {
                // passing empty bounds as bbox crashes the program, don't let it happen
                return Error{"Model has no vertices. (So no valid bounding box.)"};
              }
 
-             const auto frameBounds = bounds.bounds();
-             auto& frame = model.addFrame(name, frameBounds);
+             auto& frame = model.addFrame(name, *frameBounds);
 
              for (const auto& data : meshData)
              {
@@ -906,7 +930,7 @@ bool canLoadAssimpModel(const std::filesystem::path& path)
     ".csm",  ".ply",      ".cob",          ".scn",      ".xgl"};
   // clang-format on
 
-  return kdl::vec_contains(supportedExtensions, kdl::path_to_lower(path.extension()));
+  return kdl::ranges::contains(supportedExtensions, kdl::path_to_lower(path.extension()));
 }
 
 Result<EntityModelData> loadAssimpModel(
@@ -936,8 +960,10 @@ Result<EntityModelData> loadAssimpModel(
         "Assimp couldn't import model from '{}': {}", path, importer.GetErrorString())};
     }
 
-    // Create model data.
-    auto data = EntityModelData{PitchType::Normal, Orientation::Oriented};
+    // GoldSrc applies the Quake pitch inversion when rendering studio models.
+    const auto pitchType =
+      useQuakeCoordinateSystem(*scene) ? PitchType::MdlInverted : PitchType::Normal;
+    auto data = EntityModelData{pitchType, Orientation::Oriented};
 
     // create a frame for each animation in the scene
     // if we have no animations, always load 1 frame for the reference model
@@ -959,6 +985,15 @@ Result<EntityModelData> loadAssimpModel(
         loadTexturesForMaterial(*scene, mesh->mMaterialIndex, path, fs, logger)
         | kdl::views::as_rvalue | std::views::transform(createMaterial)
         | kdl::ranges::to<std::vector>();
+
+      if (isAdditiveMaterial(*scene->mMaterials[mesh->mMaterialIndex]))
+      {
+        for (auto& material : materials)
+        {
+          material.setBlendFunc(GL_ONE, GL_ONE);
+        }
+      }
+
       surface.setSkins(std::move(materials));
     }
 

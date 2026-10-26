@@ -26,8 +26,11 @@
 #include "mdl/UvCoordSystem.h"
 
 #include "kd/contracts.h"
+#include "kd/flat_map.h"
+#include "kd/flat_set.h"
 #include "kd/range_utils.h"
 #include "kd/ranges/concat_view.h"
+#include "kd/ranges/contains.h"
 #include "kd/ranges/to.h"
 #include "kd/reflection_impl.h"
 #include "kd/result.h"
@@ -43,7 +46,6 @@
 #include <algorithm>
 #include <iterator>
 #include <ranges>
-#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -107,7 +109,7 @@ BrushGeometry removeVerticesFromGeometry(
   for (const auto* vertex : geometry.vertices())
   {
     const auto& position = vertex->position();
-    if (!kdl::vec_contains(vertexPositions, position))
+    if (!kdl::ranges::contains(vertexPositions, position))
     {
       points.push_back(position);
     }
@@ -335,7 +337,7 @@ void Brush::cloneFaceAttributesFrom(const Brush& brush)
     {
       const auto& source = brush.face(*sourceIndex);
       destination.setMaterialName(source.materialName());
-      destination.setUvAttributes(source.uvAttributes());
+      destination.setUvAttributes(source.uvAttributes()) | kdl::ignore();
       destination.setSurfaceAttributes(source.surfaceAttributes());
 
       if (auto snapshot = source.takeUvCoordSystemSnapshot())
@@ -363,7 +365,7 @@ void Brush::cloneFaceAttributesFrom(const std::vector<const Brush*>& brushes)
     if (const auto* bestMatch = findBestMatchingFace(face, candidates))
     {
       face.setMaterialName(bestMatch->materialName());
-      face.setUvAttributes(bestMatch->uvAttributes());
+      face.setUvAttributes(bestMatch->uvAttributes()) | kdl::ignore();
       face.setSurfaceAttributes(bestMatch->surfaceAttributes());
 
       if (auto snapshot = bestMatch->takeUvCoordSystemSnapshot())
@@ -384,7 +386,7 @@ void Brush::cloneInvertedFaceAttributesFrom(const Brush& brush)
       const auto& source = brush.face(*sourceIndex);
       // Todo: invert the face attributes?
       destination.setMaterialName(source.materialName());
-      destination.setUvAttributes(source.uvAttributes());
+      destination.setUvAttributes(source.uvAttributes()) | kdl::ignore();
       destination.setSurfaceAttributes(source.surfaceAttributes());
 
       if (auto snapshot = source.takeUvCoordSystemSnapshot())
@@ -670,7 +672,7 @@ Result<void> Brush::snapVertices(
 
   const auto newGeometry = snappedGeometry(*m_geometry, snapToF);
 
-  auto vertexMapping = std::map<vm::vec3d, vm::vec3d>{};
+  auto vertexMapping = kdl::flat_map<vm::vec3d, vm::vec3d>{};
   for (const auto* vertex : m_geometry->vertices())
   {
     const auto& origin = vertex->position();
@@ -839,7 +841,7 @@ Brush::CanTransformVerticesResult Brush::doCanTransformVertices(
   }
 
   const auto vertexSet =
-    std::set<vm::vec3d>{std::begin(vertexPositions), std::end(vertexPositions)};
+    kdl::flat_set<vm::vec3d>{std::begin(vertexPositions), std::end(vertexPositions)};
 
   auto remainingPoints = std::vector<vm::vec3d>{};
   remainingPoints.reserve(vertexCount());
@@ -970,7 +972,7 @@ Result<void> Brush::doTransformVertices(
   for (const auto* vertex : m_geometry->vertices())
   {
     const auto& position = vertex->position();
-    if (kdl::vec_contains(vertexPositions, position))
+    if (kdl::ranges::contains(vertexPositions, position))
     {
       newVertices.push_back(transform * position);
     }
@@ -982,11 +984,11 @@ Result<void> Brush::doTransformVertices(
 
   auto newGeometry = BrushGeometry{newVertices};
 
-  auto vertexMapping = std::map<vm::vec3d, vm::vec3d>{};
+  auto vertexMapping = kdl::flat_map<vm::vec3d, vm::vec3d>{};
   for (auto* oldVertex : m_geometry->vertices())
   {
     const auto& oldPosition = oldVertex->position();
-    const auto transformed = kdl::vec_contains(vertexPositions, oldPosition);
+    const auto transformed = kdl::ranges::contains(vertexPositions, oldPosition);
     const auto newPosition = transformed ? transform * oldPosition : oldPosition;
     const auto* newVertex =
       newGeometry.findClosestVertex(newPosition, CloseVertexEpsilon);
@@ -1087,7 +1089,7 @@ void Brush::applyUvLock(
     auto leftClone = BrushFace{leftFace};
     leftClone.transform(*M, true) | kdl::transform([&]() {
       const auto snapshot = leftClone.takeUvCoordSystemSnapshot();
-      rightFace.setUvAttributes(leftClone.uvAttributes());
+      rightFace.setUvAttributes(leftClone.uvAttributes()) | kdl::ignore();
       rightFace.setSurfaceAttributes(leftClone.surfaceAttributes());
       if (snapshot)
       {
@@ -1275,24 +1277,20 @@ Result<Brush> Brush::createBrush(
            });
 }
 
-Brush Brush::convertToParaxial() const
+Result<Brush> Brush::convertToParaxial() const
 {
   auto result = Brush{*this};
-  for (auto& face : result.m_faces)
-  {
-    face.convertToParaxial();
-  }
-  return result;
+  return result.m_faces
+         | std::views::transform([](auto& face) { return face.convertToParaxial(); })
+         | kdl::fold | kdl::transform([&]() { return std::move(result); });
 }
 
-Brush Brush::convertToParallel() const
+Result<Brush> Brush::convertToParallel() const
 {
   auto result = Brush{*this};
-  for (auto& face : result.m_faces)
-  {
-    face.convertToParallel();
-  }
-  return result;
+  return result.m_faces
+         | std::views::transform([](auto& face) { return face.convertToParallel(); })
+         | kdl::fold | kdl::transform([&]() { return std::move(result); });
 }
 
 bool Brush::checkFaceLinks() const
@@ -1303,8 +1301,7 @@ bool Brush::checkFaceLinks() const
   }
 
   const auto findFaceGeometry = [&](const BrushFaceGeometry* g) {
-    return std::ranges::any_of(
-      m_geometry->faces(), [&](const auto* fg) { return fg == g; });
+    return kdl::ranges::contains(m_geometry->faces(), g);
   };
 
   for (const auto* faceGeometry : m_geometry->faces())
@@ -1322,7 +1319,7 @@ bool Brush::checkFaceLinks() const
     }
   }
 
-  auto faceGeometries = std::set<const BrushFaceGeometry*>{};
+  auto faceGeometries = kdl::flat_set<const BrushFaceGeometry*>{};
   for (const auto& face : m_faces)
   {
     const auto* faceGeometry = face.geometry();
