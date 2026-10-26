@@ -49,3 +49,7 @@
 - Prefer changes that read like a clean transformation from the original state to the desired result.
 - When creating a series of commits, keep each commit coherent, buildable, and with the relevant tests passing when practical.
 - When asked to write commit messages, explain why the change was made in the context of a feature or bug fix, not just what changed.
+
+## Designing brushes and prefabs
+- Use Brush Lab in `tools/brushlab/` to design rooms, bridges, decor and other prefabs as Python scripts that the user reviews before they are used. See `tools/brushlab/README.md` and the workflow in `.claude/skills/brush-design/SKILL.md`.
+- Before working on designs, check the user's feedback with `tools/brushlab/bl status --pending`. Never approve your own designs or edit `tools/brushlab/review.json`.

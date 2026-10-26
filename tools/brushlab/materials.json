@@ -1,0 +1,4 @@
+{
+  "_comment": "Maps the semantic material names used in designs to texture names for export. Unmapped names are exported as-is. Example for Quake's id1 textures: \"stone\": \"city4_6\", \"wood\": \"wizwood1_2\".",
+  "_example_wall": "city2_3"
+}
